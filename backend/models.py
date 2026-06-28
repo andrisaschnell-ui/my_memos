@@ -1,8 +1,19 @@
-from sqlalchemy import Column, String, Text, Date, DateTime
+from sqlalchemy import Column, String, Text, Date, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
 from database import Base
+
+class Client(Base):
+    __tablename__ = "clients"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    name       = Column(Text, nullable=False, unique=True)
+
+    recordings = relationship("Recording", back_populates="client")
+
 
 class Recording(Base):
     __tablename__ = "recordings"
@@ -13,4 +24,8 @@ class Recording(Base):
     transcript    = Column(Text, nullable=False)
     summary       = Column(String(100), nullable=False)
     status        = Column(String(20), nullable=False, default="pending")
-    date_recorded = Column(Date, nullable=False, server_default=func.current_date())
+    date_recorded = Column(Date, nullable=True, server_default=func.current_date())
+    type          = Column(String(20), nullable=False, default="memo")
+    client_id     = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+
+    client        = relationship("Client", back_populates="recordings")

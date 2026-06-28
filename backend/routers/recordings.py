@@ -1,13 +1,15 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Path
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Path
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, or_, and_
+from sqlalchemy.orm import selectinload
 from datetime import date
+from typing import Optional, List, Dict
 import aiofiles, os, uuid
 
 from database import get_db
-from models import Recording
-from schemas import RecordingOut, StatusUpdate
+from models import Recording, Client
+from schemas import RecordingOut, StatusUpdate, DateUpdate, ClientUpdate
 from services.transcription import transcribe_audio
 from services.summariser import summarise_to_three_words
 
@@ -17,9 +19,12 @@ UPLOAD_DIR = "/app/uploads"
 @router.post("/upload", response_model=RecordingOut, status_code=201)
 async def upload_recording(
     audio: UploadFile = File(...),
+    type: str = Form("memo"),
+    client_id: Optional[str] = Form(None),
+    client_name: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
-    """Receive audio from Flutter app, transcribe/translate, summarise, store."""
+    """Receive audio from app, transcribe/translate, summarise, store."""
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     filename = f"{uuid.uuid4()}_{audio.filename}"
     filepath = os.path.join(UPLOAD_DIR, filename)
@@ -41,48 +46,156 @@ async def upload_recording(
     except Exception as e:
         summary = "Voice Note Recorded"
 
-    # Store in DB
+    # Handle client creation/lookup if provided
+    target_client_id = None
+    if client_id and client_id.strip():
+        try:
+            target_client_id = uuid.UUID(client_id.strip())
+        except ValueError:
+            pass
+    elif client_name and client_name.strip():
+        name_clean = client_name.strip()
+        existing = await db.execute(select(Client).where(Client.name.ilike(name_clean)))
+        c_obj = existing.scalar_one_or_none()
+        if c_obj:
+            target_client_id = c_obj.id
+        else:
+            new_c = Client(name=name_clean)
+            db.add(new_c)
+            await db.commit()
+            await db.refresh(new_c)
+            target_client_id = new_c.id
+
+    rec_type = type if type in ("memo", "shopping") else "memo"
+    date_rec = date.today() if rec_type == "memo" else None
+
     recording = Recording(
         audio_path=filepath,
         transcript=transcript,
         summary=summary,
-        status="pending"
+        status="pending",
+        type=rec_type,
+        client_id=target_client_id,
+        date_recorded=date_rec
     )
     db.add(recording)
     await db.commit()
-    await db.refresh(recording)
-    return recording
+    
+    # Reload with client relationship
+    res = await db.execute(
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == recording.id)
+    )
+    return res.scalar_one()
 
 
-@router.get("/by-date/{date_str}", response_model=list[RecordingOut])
+@router.get("/by-date/{date_str}", response_model=List[RecordingOut])
 async def get_by_date(
     date_str: str = Path(..., description="Date in YYYY-MM-DD format"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Return all recordings for a specific date (for date picker)."""
+    """
+    Return all memo recordings for a specific date AND any past unresolved Urgent memos
+    so Urgent messages stay on top of the list for all future days until marked Done.
+    """
     try:
         target_date = date.fromisoformat(date_str)
     except ValueError:
         raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
 
-    result = await db.execute(
+    # Memos recorded on target date OR past urgent memos that are not done
+    stmt = (
         select(Recording)
-        .where(Recording.date_recorded == target_date)
+        .options(selectinload(Recording.client))
+        .where(
+            and_(
+                Recording.type == "memo",
+                Recording.status != "done",
+                or_(
+                    Recording.date_recorded == target_date,
+                    and_(Recording.status == "urgent", Recording.date_recorded < target_date)
+                )
+            )
+        )
+        .order_by(
+            # Put urgent memos first, then sort by date descending
+            func.case((Recording.status == "urgent", 0), else_=1),
+            Recording.created_at.desc()
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+@router.get("/shopping/active", response_model=List[RecordingOut])
+async def get_active_shopping(db: AsyncSession = Depends(get_db)):
+    """Return active (not done) shopping list items grouped by client."""
+    stmt = (
+        select(Recording)
+        .options(selectinload(Recording.client))
+        .where(and_(Recording.type == "shopping", Recording.status != "done"))
         .order_by(Recording.created_at.desc())
     )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+@router.get("/shopping/history", response_model=List[RecordingOut])
+async def get_shopping_history(db: AsyncSession = Depends(get_db)):
+    """Return historical completed ('done') shopping list items."""
+    stmt = (
+        select(Recording)
+        .options(selectinload(Recording.client))
+        .where(and_(Recording.type == "shopping", Recording.status == "done"))
+        .order_by(Recording.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+@router.get("/calendar/done-counts")
+async def get_calendar_done_counts(db: AsyncSession = Depends(get_db)):
+    """Return counts of completed ('done') memos grouped by date_recorded for calendar view."""
+    stmt = (
+        select(Recording.date_recorded, func.count(Recording.id).label("count"))
+        .where(and_(Recording.type == "memo", Recording.status == "done", Recording.date_recorded.isnot(None)))
+        .group_by(Recording.date_recorded)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    return {row.date_recorded.isoformat(): row.count for row in rows}
+
+
+@router.get("/calendar/done-by-date/{date_str}", response_model=List[RecordingOut])
+async def get_done_by_date(
+    date_str: str = Path(..., description="Date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return all completed ('done') memos for a specific past date."""
+    try:
+        target_date = date.fromisoformat(date_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
+
+    stmt = (
+        select(Recording)
+        .options(selectinload(Recording.client))
+        .where(and_(Recording.type == "memo", Recording.status == "done", Recording.date_recorded == target_date))
+        .order_by(Recording.created_at.desc())
+    )
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 
 @router.get("/{recording_id}", response_model=RecordingOut)
 async def get_recording(recording_id: str, db: AsyncSession = Depends(get_db)):
-    """Fetch a single full recording by ID (for deep-link)."""
+    """Fetch a single recording by ID."""
     try:
         rec_uuid = uuid.UUID(recording_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format")
 
     result = await db.execute(
-        select(Recording).where(Recording.id == rec_uuid)
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == rec_uuid)
     )
     rec = result.scalar_one_or_none()
     if not rec:
@@ -106,7 +219,7 @@ async def update_status(
         raise HTTPException(status_code=400, detail="Invalid UUID format")
 
     result = await db.execute(
-        select(Recording).where(Recording.id == rec_uuid)
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == rec_uuid)
     )
     rec = result.scalar_one_or_none()
     if not rec:
@@ -115,3 +228,76 @@ async def update_status(
     await db.commit()
     await db.refresh(rec)
     return rec
+
+
+@router.patch("/{recording_id}/date", response_model=RecordingOut)
+async def update_date(
+    recording_id: str,
+    update: DateUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Reschedule date_recorded for a memo."""
+    try:
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    result = await db.execute(
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == rec_uuid)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    rec.date_recorded = update.date_recorded
+    await db.commit()
+    await db.refresh(rec)
+    return rec
+
+
+@router.patch("/{recording_id}/client", response_model=RecordingOut)
+async def update_client(
+    recording_id: str,
+    update: ClientUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update or assign client_id for a recording."""
+    try:
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    result = await db.execute(
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == rec_uuid)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    rec.client_id = update.client_id
+    await db.commit()
+    await db.refresh(rec)
+    return rec
+
+
+@router.delete("/{recording_id}", status_code=204)
+async def delete_recording(recording_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete a recording from database and delete audio file from disk."""
+    try:
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    result = await db.execute(select(Recording).where(Recording.id == rec_uuid))
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    # Remove file if it exists
+    if rec.audio_path and os.path.exists(rec.audio_path):
+        try:
+            os.remove(rec.audio_path)
+        except Exception:
+            pass
+
+    await db.delete(rec)
+    await db.commit()
+    return None

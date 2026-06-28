@@ -1,14 +1,6 @@
 import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
-import { getByDate, updateStatus } from '../api/client'
-
-interface Recording {
-  id: string
-  summary: string
-  transcript: string
-  status: string
-  created_at: string
-}
+import { getByDate, updateStatus, updateDate, deleteRecording, Recording } from '../api/client'
 
 export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -38,12 +30,29 @@ export default function Dashboard() {
     }
   }
 
+  const handleDateChange = async (id: string, newDate: string) => {
+    try {
+      await updateDate(id, newDate)
+      fetchRecordings(selectedDate)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this memory?")) return
+    try {
+      await deleteRecording(id)
+      fetchRecordings(selectedDate)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   return (
-    <div style={{ maxWidth: 850, margin: '40px auto', padding: 24, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, borderBottom: '2px solid #E2E8F0', paddingBottom: 16 }}>
-        <h1 style={{ margin: 0, color: '#1E293B', fontSize: '1.8rem', display: 'flex', alignItems: 'center', gap: 10 }}>
-          🧠 <span>My Memory</span>
-        </h1>
+    <div style={{ padding: 24 }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, paddingBottom: 16, borderBottom: '2px solid #E2E8F0' }}>
+        <h2 style={{ margin: 0, color: '#1E293B' }}>📋 Daily Memory Memos</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <label style={{ fontWeight: 600, color: '#475569' }}>Date:</label>
           <input
@@ -62,18 +71,20 @@ export default function Dashboard() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#1E3A8A', color: '#FFF', textAlign: 'left' }}>
-                <th style={{ padding: '12px 16px', width: 80 }}>Time</th>
-                <th style={{ padding: '12px 16px' }}>Summary (3 words)</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', width: 80 }}>Urgent</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', width: 80 }}>Done</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', width: 90 }}>Postpone</th>
+                <th style={{ padding: '12px 16px', width: 70 }}>Time</th>
+                <th style={{ padding: '12px 16px' }}>Summary</th>
+                <th style={{ padding: '12px 16px', width: 140 }}>Move Date</th>
+                <th style={{ padding: '12px 16px', textAlign: 'center', width: 70 }}>Urgent</th>
+                <th style={{ padding: '12px 16px', textAlign: 'center', width: 70 }}>Done</th>
+                <th style={{ padding: '12px 16px', textAlign: 'center', width: 80 }}>Postpone</th>
+                <th style={{ padding: '12px 16px', textAlign: 'center', width: 70 }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {recordings.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#94A3B8' }}>
-                    No memory memos recorded for this date.
+                  <td colSpan={7} style={{ padding: 32, textAlign: 'center', color: '#94A3B8' }}>
+                    No memory memos for this date.
                   </td>
                 </tr>
               )}
@@ -95,6 +106,14 @@ export default function Dashboard() {
                       {r.summary}
                     </a>
                   </td>
+                  <td style={{ padding: '14px 16px' }}>
+                    <input
+                      type="date"
+                      value={r.date_recorded || selectedDate}
+                      onChange={e => handleDateChange(r.id, e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: 13, borderRadius: 4, border: '1px solid #CBD5E1' }}
+                    />
+                  </td>
                   <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                     <input type="radio" name={r.id} checked={r.status === 'urgent'} onChange={() => handleStatus(r.id, 'urgent')} />
                   </td>
@@ -103,6 +122,14 @@ export default function Dashboard() {
                   </td>
                   <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                     <input type="radio" name={r.id} checked={r.status === 'postpone'} onChange={() => handleStatus(r.id, 'postpone')} />
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                    <button
+                      onClick={() => handleDelete(r.id)}
+                      style={{ background: '#EF4444', color: '#FFF', border: 'none', borderRadius: 4, padding: '6px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

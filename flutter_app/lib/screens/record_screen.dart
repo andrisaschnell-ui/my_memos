@@ -4,6 +4,7 @@ import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/api_service.dart';
+import '../models/recording.dart';
 
 class RecordScreen extends StatefulWidget {
   const RecordScreen({super.key});
@@ -17,6 +18,7 @@ class _RecordScreenState extends State<RecordScreen> {
   bool _isUploading = false;
   String? _lastSummary;
   String? _statusMessage;
+  String _selectedType = 'memo'; // 'memo' or 'shopping'
 
   Future<void> _toggleRecord() async {
     final micStatus = await Permission.microphone.request();
@@ -27,25 +29,13 @@ class _RecordScreenState extends State<RecordScreen> {
 
     if (_isRecording) {
       final path = await _recorder.stop();
-      setState(() { 
-        _isRecording = false; 
-        _isUploading = true; 
-        _statusMessage = 'Transcribing & summarizing on computer...'; 
-      });
+      setState(() { _isRecording = false; });
 
       if (path != null) {
-        try {
-          final recording = await ApiService.uploadAudio(File(path));
-          setState(() {
-            _isUploading = false;
-            _lastSummary = recording.summary;
-            _statusMessage = 'Saved! Summary: "${recording.summary}"';
-          });
-        } catch (e) {
-          setState(() {
-            _isUploading = false;
-            _statusMessage = 'Error: ${e.toString()}';
-          });
+        if (_selectedType == 'shopping') {
+          await _promptClientAndUpload(File(path));
+        } else {
+          await _uploadFile(File(path), type: 'memo');
         }
       }
     } else {
@@ -58,7 +48,111 @@ class _RecordScreenState extends State<RecordScreen> {
       setState(() { 
         _isRecording = true; 
         _lastSummary = null;
-        _statusMessage = 'Recording voice memo... Tap to stop'; 
+        _statusMessage = 'Recording (${_selectedType == 'memo' ? 'My Memo' : 'My Shopping'})... Tap to stop'; 
+      });
+    }
+  }
+
+  Future<void> _promptClientAndUpload(File audioFile) async {
+    List<ClientModel> clients = [];
+    try {
+      clients = await ApiService.getClients();
+    } catch (_) {}
+
+    String? selectedClientId;
+    String newClientName = '';
+    bool isAddNew = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulWidget(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              title: const Text('🛒 Associate Client Name'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Select an existing client or create a new one for this shopping list:'),
+                    const SizedBox(height: 16),
+                    if (!isAddNew && clients.isNotEmpty) ...[
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(labelText: 'Select Client', border: OutlineInputBorder()),
+                        value: selectedClientId,
+                        items: clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                        onChanged: (val) => setModalState(() => selectedClientId = val),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () => setModalState(() => isAddNew = true),
+                        child: const Text('+ Add New Client Name'),
+                      )
+                    ] else ...[
+                      TextField(
+                        decoration: const InputDecoration(labelText: 'New Client Name', border: OutlineInputBorder()),
+                        onChanged: (val) => newClientName = val,
+                      ),
+                      if (clients.isNotEmpty)
+                        TextButton(
+                          onPressed: () => setModalState(() => isAddNew = false),
+                          child: const Text('Choose Existing Client'),
+                        )
+                    ]
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Save without Client'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Save Shopping Item'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    await _uploadFile(
+      audioFile,
+      type: 'shopping',
+      clientId: isAddNew ? null : selectedClientId,
+      clientName: isAddNew ? newClientName : null,
+    );
+  }
+
+  Future<void> _uploadFile(File file, {required String type, String? clientId, String? clientName}) async {
+    setState(() {
+      _isUploading = true;
+      _statusMessage = 'Transcribing & processing on computer...';
+    });
+    try {
+      final rec = await ApiService.uploadAudio(
+        audioFile: file,
+        type: type,
+        clientId: clientId,
+        clientName: clientName,
+      );
+      setState(() {
+        _isUploading = false;
+        _lastSummary = rec.summary;
+        _statusMessage = 'Saved! Message Name: "${rec.summary}"';
+      });
+    } catch (e) {
+      setState(() {
+        _isUploading = false;
+        _statusMessage = 'Error: ${e.toString()}';
       });
     }
   }
@@ -84,6 +178,54 @@ class _RecordScreenState extends State<RecordScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // Type Segment Toggle
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: () => setState(() => _selectedType = 'memo'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _selectedType == 'memo' ? const Color(0xFF1E3A8A) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '📋 My Memo',
+                          style: TextStyle(
+                            color: _selectedType == 'memo' ? Colors.white : const Color(0xFF475569),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _selectedType = 'shopping'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _selectedType == 'shopping' ? const Color(0xFF1E3A8A) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '🛒 My Shopping',
+                          style: TextStyle(
+                            color: _selectedType == 'shopping' ? Colors.white : const Color(0xFF475569),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 40),
               GestureDetector(
                 onTap: _isUploading ? null : _toggleRecord,
                 child: AnimatedContainer(
@@ -123,7 +265,7 @@ class _RecordScreenState extends State<RecordScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Text(
-                  _statusMessage ?? 'Tap the microphone to record a memory',
+                  _statusMessage ?? 'Tap microphone to record a ${_selectedType == 'memo' ? 'memo' : 'shopping note'}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 16, color: Color(0xFF475569), fontWeight: FontWeight.w500),
                 ),
@@ -147,7 +289,7 @@ class _RecordScreenState extends State<RecordScreen> {
                   ),
                   child: Column(
                     children: [
-                      const Text('💡 3-Word Summary', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.bold)),
+                      const Text('💡 Message Name', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.bold)),
                       const SizedBox(height: 6),
                       Text(
                         _lastSummary!,

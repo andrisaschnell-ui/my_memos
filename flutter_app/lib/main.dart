@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'screens/record_screen.dart';
 import 'screens/list_screen.dart';
+import 'screens/shopping_screen.dart';
+import 'screens/calendar_screen.dart';
 
 void main() {
   runApp(const MyMemoryApp());
@@ -35,6 +37,8 @@ class _MainNavState extends State<MainNav> {
   final List<Widget> _screens = const [
     RecordScreen(),
     ListScreen(),
+    ShoppingScreen(),
+    CalendarScreen(),
   ];
 
   @override
@@ -44,10 +48,14 @@ class _MainNavState extends State<MainNav> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         selectedItemColor: const Color(0xFF1E3A8A),
+        unselectedItemColor: Colors.grey,
+        type: BottomNavigationBarType.fixed,
         onTap: (i) => setState(() => _currentIndex = i),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.mic), label: 'Record'),
-          BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'My Memos'),
+          BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Memos'),
+          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Shopping'),
+          BottomNavigationBarItem(icon: Icon(Icons.calendar_month), label: 'Calendar'),
         ],
       ),
     );
