@@ -1,15 +1,27 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from dotenv import load_dotenv
-import os
+import os, ssl
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://memuser:mempass@db:5432/memassist").replace(
-    "postgresql://", "postgresql+asyncpg://"
-)
+raw_db_url = os.getenv("DATABASE_URL", "postgresql://memuser:mempass@db:5432/memassist")
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+# Ensure asyncpg driver is specified
+if not raw_db_url.startswith("postgresql+asyncpg://"):
+    raw_db_url = raw_db_url.replace("postgres://", "postgresql+asyncpg://").replace("postgresql://", "postgresql+asyncpg://")
+
+DATABASE_URL = raw_db_url
+
+# Configure SSL for cloud databases (Supabase / Railway)
+connect_args = {}
+if "supabase" in DATABASE_URL or "railway" in DATABASE_URL:
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    connect_args["ssl"] = ssl_context
+
+engine = create_async_engine(DATABASE_URL, echo=False, connect_args=connect_args, pool_pre_ping=True)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 class Base(DeclarativeBase):
