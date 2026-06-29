@@ -23,6 +23,10 @@ app.add_middleware(
 app.include_router(recordings.router)
 app.include_router(clients.router)
 
+@app.get("/")
+async def root():
+    return {"message": "My Memory API is online and healthy", "docs": "/docs", "health": "/health"}
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
