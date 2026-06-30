@@ -15,6 +15,9 @@ DATABASE_URL = raw_db_url
 
 # Configure SSL for cloud databases (Supabase / Railway)
 connect_args = {}
+# Disable prepared statement cache for transaction pooler (PgBouncer compatibility)
+connect_args["statement_cache_size"] = 0
+
 if "supabase" in DATABASE_URL or "railway" in DATABASE_URL:
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
