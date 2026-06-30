@@ -11,8 +11,8 @@ _model = None
 def get_whisper_model():
     global _model
     if _model is None:
-        # Using "base" model for fast CPU execution and low RAM footprint.
-        _model = WhisperModel("base", device="cpu", compute_type="int8")
+        # Using "tiny" model for fast CPU execution and very low RAM footprint on Railway.
+        _model = WhisperModel("tiny", device="cpu", compute_type="int8")
     return _model
 
 def _transcribe_sync(audio_path: str) -> str:

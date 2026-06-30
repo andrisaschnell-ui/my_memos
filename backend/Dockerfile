@@ -5,6 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download the Whisper model during build phase to avoid runtime download timeouts and out-of-memory errors on Railway
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('tiny', device='cpu', compute_type='int8')"
+
 COPY . .
 
 RUN mkdir -p /app/uploads
