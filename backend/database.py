@@ -13,6 +13,13 @@ if not raw_db_url.startswith("postgresql+asyncpg://"):
 
 DATABASE_URL = raw_db_url
 
+# Append prepared_statement_cache_size=0 to URL query parameters for PgBouncer / Transaction pooling mode
+if "prepared_statement_cache_size" not in DATABASE_URL:
+    if "?" in DATABASE_URL:
+        DATABASE_URL += "&prepared_statement_cache_size=0"
+    else:
+        DATABASE_URL += "?prepared_statement_cache_size=0"
+
 # Configure SSL for cloud databases (Supabase / Railway)
 connect_args = {}
 # Disable prepared statement cache for transaction pooler (PgBouncer compatibility)
