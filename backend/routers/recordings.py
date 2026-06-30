@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Path
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, case
 from sqlalchemy.orm import selectinload
 from datetime import date
 from typing import Optional, List, Dict
@@ -118,7 +118,7 @@ async def get_by_date(
         )
         .order_by(
             # Put urgent memos first, then sort by date descending
-            func.case((Recording.status == "urgent", 0), else_=1),
+            case((Recording.status == "urgent", 0), else_=1),
             Recording.created_at.desc()
         )
     )
