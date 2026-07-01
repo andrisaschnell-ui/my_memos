@@ -24,6 +24,8 @@ if "prepared_statement_cache_size" not in DATABASE_URL:
 connect_args = {}
 # Disable prepared statement cache for transaction pooler (PgBouncer compatibility)
 connect_args["statement_cache_size"] = 0
+connect_args["timeout"] = 10.0
+connect_args["command_timeout"] = 10.0
 
 if "supabase" in DATABASE_URL or "railway" in DATABASE_URL:
     ssl_context = ssl.create_default_context()

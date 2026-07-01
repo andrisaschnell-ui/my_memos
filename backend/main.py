@@ -8,14 +8,18 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("main")
 
+import asyncio
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        async def init_db():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        await asyncio.wait_for(init_db(), timeout=5.0)
         logger.info("Database tables initialized successfully.")
     except Exception as e:
-        logger.error(f"Database initialization error during startup: {e}")
+        logger.error(f"Database initialization warning/timeout during startup: {e}")
     yield
 
 app = FastAPI(title="My Memory API", version="1.0.0", lifespan=lifespan)
