@@ -22,6 +22,7 @@ async def upload_recording(
     type: str = Form("memo"),
     client_id: Optional[str] = Form(None),
     client_name: Optional[str] = Form(None),
+    user_email: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Receive audio from app, transcribe/translate, summarise, store."""
@@ -79,7 +80,8 @@ async def upload_recording(
         status="pending",
         type=rec_type,
         client_id=target_client_id,
-        date_recorded=date_rec
+        date_recorded=date_rec,
+        user_email=user_email
     )
     db.add(recording)
     await db.commit()
@@ -94,6 +96,7 @@ async def upload_recording(
 @router.get("/by-date/{date_str}", response_model=List[RecordingOut])
 async def get_by_date(
     date_str: str = Path(..., description="Date in YYYY-MM-DD format"),
+    user_email: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -105,22 +108,22 @@ async def get_by_date(
     except ValueError:
         raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
 
-    # Memos recorded on target date OR past urgent memos that are not done
+    conditions = [
+        Recording.type == "memo",
+        Recording.status != "done",
+        or_(
+            Recording.date_recorded == target_date,
+            and_(Recording.status == "urgent", Recording.date_recorded < target_date)
+        )
+    ]
+    if user_email:
+        conditions.append(Recording.user_email == user_email)
+
     stmt = (
         select(Recording)
         .options(selectinload(Recording.client))
-        .where(
-            and_(
-                Recording.type == "memo",
-                Recording.status != "done",
-                or_(
-                    Recording.date_recorded == target_date,
-                    and_(Recording.status == "urgent", Recording.date_recorded < target_date)
-                )
-            )
-        )
+        .where(and_(*conditions))
         .order_by(
-            # Put urgent memos first, then sort by date descending
             case((Recording.status == "urgent", 0), else_=1),
             Recording.created_at.desc()
         )
@@ -130,12 +133,15 @@ async def get_by_date(
 
 
 @router.get("/shopping/active", response_model=List[RecordingOut])
-async def get_active_shopping(db: AsyncSession = Depends(get_db)):
+async def get_active_shopping(user_email: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """Return active (not done) shopping list items grouped by client."""
+    conditions = [Recording.type == "shopping", Recording.status != "done"]
+    if user_email:
+        conditions.append(Recording.user_email == user_email)
     stmt = (
         select(Recording)
         .options(selectinload(Recording.client))
-        .where(and_(Recording.type == "shopping", Recording.status != "done"))
+        .where(and_(*conditions))
         .order_by(Recording.created_at.desc())
     )
     result = await db.execute(stmt)
@@ -143,12 +149,15 @@ async def get_active_shopping(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/shopping/history", response_model=List[RecordingOut])
-async def get_shopping_history(db: AsyncSession = Depends(get_db)):
+async def get_shopping_history(user_email: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """Return historical completed ('done') shopping list items."""
+    conditions = [Recording.type == "shopping", Recording.status == "done"]
+    if user_email:
+        conditions.append(Recording.user_email == user_email)
     stmt = (
         select(Recording)
         .options(selectinload(Recording.client))
-        .where(and_(Recording.type == "shopping", Recording.status == "done"))
+        .where(and_(*conditions))
         .order_by(Recording.created_at.desc())
     )
     result = await db.execute(stmt)
@@ -156,11 +165,14 @@ async def get_shopping_history(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/calendar/done-counts")
-async def get_calendar_done_counts(db: AsyncSession = Depends(get_db)):
+async def get_calendar_done_counts(user_email: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """Return counts of completed ('done') memos grouped by date_recorded for calendar view."""
+    conditions = [Recording.type == "memo", Recording.status == "done", Recording.date_recorded.isnot(None)]
+    if user_email:
+        conditions.append(Recording.user_email == user_email)
     stmt = (
         select(Recording.date_recorded, func.count(Recording.id).label("count"))
-        .where(and_(Recording.type == "memo", Recording.status == "done", Recording.date_recorded.isnot(None)))
+        .where(and_(*conditions))
         .group_by(Recording.date_recorded)
     )
     result = await db.execute(stmt)
@@ -171,6 +183,7 @@ async def get_calendar_done_counts(db: AsyncSession = Depends(get_db)):
 @router.get("/calendar/done-by-date/{date_str}", response_model=List[RecordingOut])
 async def get_done_by_date(
     date_str: str = Path(..., description="Date in YYYY-MM-DD format"),
+    user_email: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Return all completed ('done') memos for a specific past date."""
@@ -179,10 +192,13 @@ async def get_done_by_date(
     except ValueError:
         raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
 
+    conditions = [Recording.type == "memo", Recording.status == "done", Recording.date_recorded == target_date]
+    if user_email:
+        conditions.append(Recording.user_email == user_email)
     stmt = (
         select(Recording)
         .options(selectinload(Recording.client))
-        .where(and_(Recording.type == "memo", Recording.status == "done", Recording.date_recorded == target_date))
+        .where(and_(*conditions))
         .order_by(Recording.created_at.desc())
     )
     result = await db.execute(stmt)

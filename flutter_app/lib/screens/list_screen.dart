@@ -15,11 +15,20 @@ class _ListScreenState extends State<ListScreen> {
   DateTime _selectedDate = DateTime.now();
   List<Recording> _recordings = [];
   bool _loading = false;
+  String _authEmail = '';
 
   @override
   void initState() {
     super.initState();
+    _loadUser();
     _fetchRecordings();
+  }
+
+  Future<void> _loadUser() async {
+    final email = await ApiService.getAuthEmail();
+    if (email != null && mounted) {
+      setState(() => _authEmail = email);
+    }
   }
 
   Future<void> _fetchRecordings() async {
@@ -201,6 +210,23 @@ class _ListScreenState extends State<ListScreen> {
       ),
       body: Column(
         children: [
+          if (_authEmail.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              color: const Color(0xFFEFF6FF),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.person, size: 16, color: Color(0xFF1D4ED8)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Logged in as: $_authEmail',
+                    style: const TextStyle(color: Color(0xFF1D4ED8), fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
           GestureDetector(
             onTap: _pickDate,
             child: Container(

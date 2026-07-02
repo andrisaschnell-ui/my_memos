@@ -23,6 +23,7 @@ class RecordingOut(BaseModel):
     type: str
     client_id: Optional[uuid.UUID] = None
     client: Optional[ClientOut] = None
+    user_email: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

@@ -21,6 +21,8 @@ async def lifespan(app: FastAPI):
                     logger.info("Running table migrations...")
                     await conn.execute(text("ALTER TABLE user_auth ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user'"))
                     await conn.execute(text("ALTER TABLE user_auth ALTER COLUMN pin TYPE VARCHAR(50)"))
+                    await conn.execute(text("ALTER TABLE recordings ADD COLUMN IF NOT EXISTS user_email VARCHAR(255)"))
+                    await conn.execute(text("UPDATE recordings SET user_email = 'andrisa.schnell@gmail.com' WHERE user_email IS NULL"))
                     logger.info("Table migrations completed.")
                 except Exception as ex:
                     logger.warning(f"Column migration warning: {ex}")

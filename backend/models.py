@@ -27,6 +27,7 @@ class Recording(Base):
     date_recorded = Column(Date, nullable=True, server_default=func.current_date())
     type          = Column(String(20), nullable=False, default="memo")
     client_id     = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+    user_email    = Column(String(255), nullable=True, index=True)
 
     client        = relationship("Client", back_populates="recordings")
 

@@ -4,6 +4,20 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'https://mymemos-production-d0e1.up.railway.app' 
 })
 
+api.interceptors.request.use((config) => {
+  const email = localStorage.getItem('auth_email')
+  if (email && config.url?.includes('/recordings')) {
+    if (config.method?.toLowerCase() === 'get') {
+      config.params = { ...(config.params || {}), user_email: email }
+    } else if (config.method?.toLowerCase() === 'post' && config.data instanceof FormData) {
+      if (!config.data.has('user_email')) {
+        config.data.append('user_email', email)
+      }
+    }
+  }
+  return config
+})
+
 export interface Client {
   id: string
   created_at: string

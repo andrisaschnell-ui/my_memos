@@ -11,11 +11,20 @@ class ShoppingScreen extends StatefulWidget {
 class _ShoppingScreenState extends State<ShoppingScreen> {
   List<Recording> _items = [];
   bool _loading = false;
+  String _authEmail = '';
 
   @override
   void initState() {
     super.initState();
+    _loadUser();
     _fetchShopping();
+  }
+
+  Future<void> _loadUser() async {
+    final email = await ApiService.getAuthEmail();
+    if (email != null && mounted) {
+      setState(() => _authEmail = email);
+    }
   }
 
   Future<void> _fetchShopping() async {
@@ -62,7 +71,27 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
         title: const Text('🛒 My Shopping', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         elevation: 0,
       ),
-      body: _loading
+      body: Column(
+        children: [
+          if (_authEmail.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              color: const Color(0xFFEFF6FF),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.person, size: 16, color: Color(0xFF1D4ED8)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Logged in as: $_authEmail',
+                    style: const TextStyle(color: Color(0xFF1D4ED8), fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: _loading
         ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
         : grouped.isEmpty
           ? const Center(child: Text('No active shopping items.', style: TextStyle(color: Colors.grey)))
@@ -113,6 +142,9 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                 );
               }).toList(),
             ),
+          ),
+        ],
+      ),
     );
   }
 }

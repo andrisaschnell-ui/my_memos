@@ -36,9 +36,14 @@ function Navigation({ onLogout }: { onLogout: () => void }) {
         {isAdmin && (
           <Link to="/admin/users" style={navStyle('/admin/users')}>👥 Admin Users</Link>
         )}
+        {authEmail && (
+          <span style={{ padding: '6px 12px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: 20, fontSize: 13, fontWeight: 700, marginLeft: 8 }}>
+            👤 {authEmail}
+          </span>
+        )}
         <button
           onClick={onLogout}
-          style={{ padding: '8px 14px', background: '#EF4444', color: '#FFF', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer', marginLeft: 12 }}
+          style={{ padding: '8px 14px', background: '#EF4444', color: '#FFF', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer', marginLeft: 8 }}
         >
           Logout
         </button>

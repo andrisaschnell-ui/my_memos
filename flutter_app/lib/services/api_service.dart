@@ -2,10 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../models/recording.dart';
 
 class ApiService {
+  static Future<String?> getAuthEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_email');
+  }
+
   static Future<Recording> uploadAudio({
     required File audioFile,
     required String type,
@@ -20,6 +26,10 @@ class ApiService {
     }
     if (clientName != null && clientName.isNotEmpty) {
       request.fields['client_name'] = clientName;
+    }
+    final userEmail = await getAuthEmail();
+    if (userEmail != null && userEmail.isNotEmpty) {
+      request.fields['user_email'] = userEmail;
     }
     request.files.add(await http.MultipartFile.fromPath(
       'audio',
@@ -36,7 +46,9 @@ class ApiService {
 
   static Future<List<Recording>> getByDate(DateTime date) async {
     final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    final uri = Uri.parse('$BASE_URL/recordings/by-date/$dateStr');
+    final userEmail = await getAuthEmail();
+    final query = userEmail != null && userEmail.isNotEmpty ? '?user_email=${Uri.encodeComponent(userEmail)}' : '';
+    final uri = Uri.parse('$BASE_URL/recordings/by-date/$dateStr$query');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
@@ -46,7 +58,9 @@ class ApiService {
   }
 
   static Future<List<Recording>> getActiveShopping() async {
-    final uri = Uri.parse('$BASE_URL/recordings/shopping/active');
+    final userEmail = await getAuthEmail();
+    final query = userEmail != null && userEmail.isNotEmpty ? '?user_email=${Uri.encodeComponent(userEmail)}' : '';
+    final uri = Uri.parse('$BASE_URL/recordings/shopping/active$query');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
@@ -56,7 +70,9 @@ class ApiService {
   }
 
   static Future<Map<String, int>> getCalendarDoneCounts() async {
-    final uri = Uri.parse('$BASE_URL/recordings/calendar/done-counts');
+    final userEmail = await getAuthEmail();
+    final query = userEmail != null && userEmail.isNotEmpty ? '?user_email=${Uri.encodeComponent(userEmail)}' : '';
+    final uri = Uri.parse('$BASE_URL/recordings/calendar/done-counts$query');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
       final Map<String, dynamic> data = jsonDecode(response.body);
@@ -67,7 +83,9 @@ class ApiService {
 
   static Future<List<Recording>> getDoneByDate(DateTime date) async {
     final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    final uri = Uri.parse('$BASE_URL/recordings/calendar/done-by-date/$dateStr');
+    final userEmail = await getAuthEmail();
+    final query = userEmail != null && userEmail.isNotEmpty ? '?user_email=${Uri.encodeComponent(userEmail)}' : '';
+    final uri = Uri.parse('$BASE_URL/recordings/calendar/done-by-date/$dateStr$query');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
