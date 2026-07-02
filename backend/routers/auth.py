@@ -7,6 +7,7 @@ import random, uuid, os, logging
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from typing import Optional
 
 from database import get_db
 from models import UserAuth
