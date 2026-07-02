@@ -96,84 +96,113 @@ class _ListScreenState extends State<ListScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (bottomSheetCtx) {
+        final bottomInset = MediaQuery.of(bottomSheetCtx).viewInsets.bottom;
+        final bottomPadding = MediaQuery.of(bottomSheetCtx).padding.bottom;
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomInset),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(24, 20, 24, bottomPadding + 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(rec.summary, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          rec.summary,
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () {
+                          Navigator.pop(bottomSheetCtx);
+                          _deleteRecording(rec);
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(bottomSheetCtx),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _deleteRecording(rec);
-                    },
+                  const SizedBox(height: 4),
+                  Text(
+                    'Recorded at ${DateFormat('HH:mm on dd MMM yyyy').format(rec.createdAt)}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 13),
                   ),
-                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Recorded at ${DateFormat('HH:mm on dd MMM yyyy').format(rec.createdAt)}',
-                style: const TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-              const Divider(height: 24),
-              const Text('English Transcript:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF475569))),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Text(
-                  rec.transcript,
-                  style: const TextStyle(fontSize: 15, height: 1.5, color: Color(0xFF1E293B)),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.calendar_month),
-                      label: const Text('Move Date'),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _rescheduleDate(rec);
-                      },
+                  const Divider(height: 24),
+                  const Text('English Transcript:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF475569))),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Text(
+                      rec.transcript,
+                      style: const TextStyle(fontSize: 15, height: 1.5, color: Color(0xFF1E293B)),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.open_in_browser),
-                      label: const Text('Open Web'),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
-                      onPressed: () async {
-                        final host = BASE_URL.replaceAll('http://', '').split(':')[0];
-                        final uri = Uri.parse('http://$host:5173/message/${rec.id}');
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
-                      },
-                    ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.calendar_month),
+                          label: const Text('Move Date'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: () async {
+                            Navigator.pop(bottomSheetCtx);
+                            await Future.delayed(const Duration(milliseconds: 150));
+                            if (!mounted) return;
+                            _rescheduleDate(rec);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.open_in_browser),
+                          label: const Text('Open Web'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: () async {
+                            final Uri uri;
+                            if (BASE_URL.startsWith('https://') || BASE_URL.contains('.railway.app') || BASE_URL.contains('.com')) {
+                              uri = Uri.parse('$BASE_URL/message/${rec.id}');
+                            } else {
+                              final cleanHost = BASE_URL.replaceAll('http://', '').replaceAll('https://', '').split(':')[0];
+                              uri = Uri.parse('http://$cleanHost:5173/message/${rec.id}');
+                            }
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              )
-            ],
+              ),
+            ),
           ),
         );
       },
