@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, Base
-from routers import recordings, clients, auth, updates
+from routers import recordings, clients, auth, updates, lodge
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +46,7 @@ app.include_router(recordings.router)
 app.include_router(clients.router)
 app.include_router(auth.router)
 app.include_router(updates.router)
+app.include_router(lodge.router)
 
 @app.get("/")
 async def root():
