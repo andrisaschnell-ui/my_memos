@@ -43,3 +43,10 @@ backend/uploads/*
 *.swo
 .DS_Store
 Thumbs.db
+
+# Documentation Guides & Private Images
+docs/
+docs/guide/
+docs/passports/
+plans/
+secrets/

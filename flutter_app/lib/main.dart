@@ -8,6 +8,7 @@ import 'screens/calendar_screen.dart';
 import 'screens/guest_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/api_service.dart';
+import 'config.dart';
 
 void main() {
   runApp(const MyMemoryApp());
@@ -99,12 +100,16 @@ class _MainNavState extends State<MainNav> {
 
   Future<void> _checkForUpdates() async {
     try {
-      final res = await ApiService.getLatestUpdate('1.0.0');
+      final res = await ApiService.getLatestUpdate('6.0.0');
       if (res['update_available'] == true && res['apk_url'] != null) {
+        String url = res['apk_url'];
+        if (url.startsWith('/')) {
+          url = '$BASE_URL$url';
+        }
         if (mounted) {
           setState(() {
             _updateAvailable = true;
-            _apkUrl = res['apk_url'];
+            _apkUrl = url;
           });
         }
       }
@@ -112,11 +117,10 @@ class _MainNavState extends State<MainNav> {
   }
 
   Future<void> _launchUpdate() async {
-    if (_apkUrl.isNotEmpty) {
-      final uri = Uri.parse(_apkUrl);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+    final targetUrl = _apkUrl.isNotEmpty ? _apkUrl : '$BASE_URL/updates/download';
+    final uri = Uri.parse(targetUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -126,27 +130,33 @@ class _MainNavState extends State<MainNav> {
       body: Column(
         children: [
           Expanded(child: _screens[_currentIndex]),
-          if (_updateAvailable)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: const Color(0xFF16A34A),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('🎉 New App Update Available!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF16A34A),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    ),
-                    onPressed: _launchUpdate,
-                    child: const Text('Update Now', style: TextStyle(fontWeight: FontWeight.bold)),
-                  )
-                ],
-              ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: const Color(0xFF1E293B),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _updateAvailable ? '🎉 New App Update Available!' : '📲 App Version: 6.0.0',
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _updateAvailable ? const Color(0xFF16A34A) : const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  ),
+                  onPressed: _launchUpdate,
+                  icon: const Icon(Icons.download, size: 16, color: Colors.white),
+                  label: Text(
+                    _updateAvailable ? 'Update Now' : 'Download Latest',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                )
+              ],
             ),
+          ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

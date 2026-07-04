@@ -21,20 +21,44 @@ class RegisterReleaseRequest(BaseModel):
     apk_url: str
     release_notes: Optional[str] = None
 
+@router.get("/download")
+async def download_apk():
+    """
+    Serve the latest compiled Android package directly from the backend directory.
+    """
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    apk_path = "app-release.apk"
+    if os.path.exists(apk_path):
+        return FileResponse(
+            path=apk_path,
+            filename="MyMemory-v6-Passport.apk",
+            media_type="application/vnd.android.package-archive"
+        )
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    full_path = os.path.join(base_dir, "app-release.apk")
+    if os.path.exists(full_path):
+        return FileResponse(
+            path=full_path,
+            filename="MyMemory-v6-Passport.apk",
+            media_type="application/vnd.android.package-archive"
+        )
+    raise HTTPException(status_code=404, detail="APK file not found on server")
+
+
 @router.get("/latest", response_model=LatestReleaseResponse)
 async def get_latest_update(current_version: str = "1.0.0", db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(AppRelease).order_by(AppRelease.created_at.desc()))
     latest = result.scalars().first()
 
-    default_supabase_url = os.getenv("SUPABASE_APK_URL", "https://supabase.co/storage/v1/object/public/apk/app-release.apk")
+    default_url = "/updates/download"
     
     if not latest:
-        # Default fallback if no release registered in DB yet
-        ver = os.getenv("LATEST_APK_VERSION", "1.0.0")
+        ver = os.getenv("LATEST_APK_VERSION", "6.0.0")
         return LatestReleaseResponse(
             version=ver,
-            apk_url=default_supabase_url,
-            release_notes="Standard memory app release.",
+            apk_url=default_url,
+            release_notes="Latest memory app release.",
             update_available=(ver != current_version and ver > current_version)
         )
 
