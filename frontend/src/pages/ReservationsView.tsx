@@ -9,6 +9,13 @@ interface Guest {
   phone?: string;
   nationality?: string;
   id_number?: string;
+  passport_number?: string;
+  date_of_birth?: string;
+  date_of_issue?: string;
+  date_of_expiry?: string;
+  issuing_authority?: string;
+  place_of_birth?: string;
+  has_passport_image?: boolean;
   notes?: string;
 }
 
@@ -295,13 +302,62 @@ export const ReservationsView: React.FC = () => {
               ) : (
                 guests.map((g) => (
                   <tr key={g.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <td style={{ padding: '1rem', fontWeight: 600 }}>{g.full_name}</td>
+                    <td style={{ padding: '1rem', fontWeight: 600 }}>
+                      <div>{g.full_name}</div>
+                      {g.has_passport_image && (
+                        <a
+                          href={`${api.defaults.baseURL}/passport/guests/${g.id}/passport-image`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.75rem',
+                            color: '#38bdf8',
+                            textDecoration: 'none',
+                            marginTop: '0.25rem',
+                            fontWeight: 'normal'
+                          }}
+                        >
+                          📷 View Passport File
+                        </a>
+                      )}
+                    </td>
                     <td style={{ padding: '1rem', fontSize: '0.9rem' }}>
                       <div>{g.phone || 'No phone'}</div>
                       <div style={{ color: '#94a3b8' }}>{g.email}</div>
                     </td>
-                    <td style={{ padding: '1rem' }}>{g.nationality || '—'}</td>
-                    <td style={{ padding: '1rem' }}>{g.id_number || '—'}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <div>{g.nationality || '—'}</div>
+                      {g.place_of_birth && (
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.15rem' }}>Born: {g.place_of_birth}</div>
+                      )}
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      {g.passport_number ? (
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Passport:</span>
+                          <strong>{g.passport_number}</strong>
+                        </div>
+                      ) : null}
+                      {g.id_number ? (
+                        <div style={{ marginTop: g.passport_number ? '0.25rem' : 0 }}>
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>ID Number:</span>
+                          <strong>{g.id_number}</strong>
+                        </div>
+                      ) : null}
+                      {g.date_of_expiry ? (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          color: g.date_of_expiry && (new Date(g.date_of_expiry).getTime() - Date.now() < 90 * 86400 * 1000) ? '#f97316' : '#94a3b8',
+                          marginTop: '0.25rem'
+                        }}>
+                          Expires: {g.date_of_expiry}
+                        </div>
+                      ) : null}
+                      {!g.passport_number && !g.id_number ? '—' : null}
+                    </td>
                     <td style={{ padding: '1rem' }}>
                       <button
                         onClick={() => handleDeleteGuest(g.id)}
