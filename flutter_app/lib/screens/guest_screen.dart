@@ -24,6 +24,7 @@ class GuestModel {
   final String? phone;
   final String? email;
   final String? notes;
+  final String? userEmail;
   final bool hasPassportImage;
 
   GuestModel({
@@ -40,6 +41,7 @@ class GuestModel {
     this.phone,
     this.email,
     this.notes,
+    this.userEmail,
     this.hasPassportImage = false,
   });
 
@@ -57,6 +59,7 @@ class GuestModel {
     phone:            j['phone'],
     email:            j['email'],
     notes:            j['notes'],
+    userEmail:        j['user_email'],
     hasPassportImage: j['has_passport_image'] == true,
   );
 }
@@ -74,6 +77,7 @@ class _GuestScreenState extends State<GuestScreen> {
   List<GuestModel> _guests = [];
   bool _loading = true;
   String? _token;
+  DateTime? _selectedFilterDate;
 
   @override
   void initState() {
@@ -90,19 +94,62 @@ class _GuestScreenState extends State<GuestScreen> {
   Future<void> _loadGuests() async {
     setState(() => _loading = true);
     try {
-      final resp = await http.get(
-        Uri.parse('$BASE_URL/lodge/guests'),
-        headers: {'Authorization': 'Bearer $_token'},
-      );
-      if (resp.statusCode == 200) {
-        final list = json.decode(resp.body) as List;
-        setState(() => _guests = list.map((e) => GuestModel.fromJson(e)).toList());
+      if (_selectedFilterDate != null) {
+        final dateStr = '${_selectedFilterDate!.year}-${_selectedFilterDate!.month.toString().padLeft(2, '0')}-${_selectedFilterDate!.day.toString().padLeft(2, '0')}';
+        final resp = await http.get(
+          Uri.parse('$BASE_URL/passport/search?date=$dateStr'),
+          headers: {'Authorization': 'Bearer $_token'},
+        );
+        if (resp.statusCode == 200) {
+          final list = json.decode(resp.body) as List;
+          setState(() => _guests = list.map((e) => GuestModel.fromJson(e)).toList());
+        }
+      } else {
+        final resp = await http.get(
+          Uri.parse('$BASE_URL/lodge/guests'),
+          headers: {'Authorization': 'Bearer $_token'},
+        );
+        if (resp.statusCode == 200) {
+          final list = json.decode(resp.body) as List;
+          setState(() => _guests = list.map((e) => GuestModel.fromJson(e)).toList());
+        }
       }
     } catch (e) {
       debugPrint('Load guests error: $e');
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  Future<void> _selectFilterDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedFilterDate ?? DateTime.now(),
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2035),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF3B82F6),
+            onPrimary: Colors.white,
+            surface: Color(0xFF1E293B),
+            onSurface: Colors.white,
+          ),
+          dialogBackgroundColor: const Color(0xFF0F172A),
+        ),
+        child: child!,
+      ),
+    );
+
+    if (picked != null) {
+      setState(() => _selectedFilterDate = picked);
+      _loadGuests();
+    }
+  }
+
+  void _clearFilterDate() {
+    setState(() => _selectedFilterDate = null);
+    _loadGuests();
   }
 
   void _openNewGuestForm({GuestModel? prefilled, File? passportImage}) {
@@ -131,18 +178,57 @@ class _GuestScreenState extends State<GuestScreen> {
         backgroundColor: const Color(0xFF1E3A8A),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _loadGuests),
+          if (_selectedFilterDate != null)
+            IconButton(
+              icon: const Icon(Icons.clear, color: Colors.redAccent),
+              onPressed: _clearFilterDate,
+              tooltip: 'Clear Date Filter',
+            ),
+          IconButton(
+            icon: const Icon(Icons.date_range, color: Colors.white),
+            onPressed: _selectFilterDate,
+            tooltip: 'Filter by Date',
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _loadGuests,
+          ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF3B82F6)))
-          : _guests.isEmpty
-               ? _emptyState()
-               : ListView.builder(
-                   padding: const EdgeInsets.all(12),
-                   itemCount: _guests.length,
-                   itemBuilder: (_, i) => _GuestCard(guest: _guests[i]),
-                 ),
+      body: Column(
+        children: [
+          if (_selectedFilterDate != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: const Color(0xFF1E293B),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Filtering reservations active on: ${_selectedFilterDate!.year}-${_selectedFilterDate!.month.toString().padLeft(2, '0')}-${_selectedFilterDate!.day.toString().padLeft(2, '0')}',
+                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  GestureDetector(
+                    onTap: _clearFilterDate,
+                    child: const Text('Clear', style: TextStyle(color: Color(0xFF3B82F6), fontWeight: FontWeight.bold)),
+                  )
+                ],
+              ),
+            ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF3B82F6)))
+                : _guests.isEmpty
+                     ? _emptyState()
+                     : ListView.builder(
+                         padding: const EdgeInsets.all(12),
+                         itemCount: _guests.length,
+                         itemBuilder: (_, i) => _GuestCard(guest: _guests[i]),
+                       ),
+          ),
+        ],
+      ),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -171,7 +257,7 @@ class _GuestScreenState extends State<GuestScreen> {
       children: [
         const Icon(Icons.people_outline, size: 64, color: Color(0xFF475569)),
         const SizedBox(height: 12),
-        const Text('No guests yet', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 18)),
+        const Text('No guests found', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 18)),
         const SizedBox(height: 8),
         const Text('Tap "Scan Passport" to add a guest instantly',
             style: TextStyle(color: Color(0xFF64748B))),
@@ -274,6 +360,8 @@ class _GuestCard extends StatelessWidget {
                 color: _isExpirySoon(guest.dateOfExpiry!) ? Colors.orange : const Color(0xFF64748B),
                 fontSize: 12,
               )),
+            if (guest.userEmail != null && guest.userEmail!.isNotEmpty)
+              Text('Scanned by: ${guest.userEmail}', style: const TextStyle(color: Color(0xFF475569), fontSize: 11)),
           ],
         ),
         trailing: guest.hasPassportImage
@@ -331,6 +419,10 @@ class _GuestFormSheetState extends State<GuestFormSheet> {
   late final TextEditingController _email;
   late final TextEditingController _notes;
 
+  // Reservation Check-in/Check-out dates state
+  DateTime _checkInDate = DateTime.now();
+  DateTime _checkOutDate = DateTime.now().add(const Duration(days: 1));
+
   @override
   void initState() {
     super.initState();
@@ -359,9 +451,52 @@ class _GuestFormSheetState extends State<GuestFormSheet> {
     super.dispose();
   }
 
+  Future<void> _pickDate(bool isCheckIn) async {
+    final initialDate = isCheckIn ? _checkInDate : _checkOutDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2035),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF3B82F6),
+            onPrimary: Colors.white,
+            surface: Color(0xFF1E293B),
+            onSurface: Colors.white,
+          ),
+          dialogBackgroundColor: const Color(0xFF0F172A),
+        ),
+        child: child!,
+      ),
+    );
+
+    if (picked != null) {
+      setState(() {
+        if (isCheckIn) {
+          _checkInDate = picked;
+          // Ensure check-out is at least the next day
+          if (_checkOutDate.isBefore(_checkInDate) || _checkOutDate.isAtSameMomentAs(_checkInDate)) {
+            _checkOutDate = _checkInDate.add(const Duration(days: 1));
+          }
+        } else {
+          _checkOutDate = picked;
+        }
+      });
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
+
+    // Retrieve active logged in email
+    final prefs = await SharedPreferences.getInstance();
+    final authEmail = prefs.getString('auth_email') ?? '';
+
+    final checkInStr = '${_checkInDate.year}-${_checkInDate.month.toString().padLeft(2, '0')}-${_checkInDate.day.toString().padLeft(2, '0')}';
+    final checkOutStr = '${_checkOutDate.year}-${_checkOutDate.month.toString().padLeft(2, '0')}-${_checkOutDate.day.toString().padLeft(2, '0')}';
 
     try {
       final body = json.encode({
@@ -377,6 +512,9 @@ class _GuestFormSheetState extends State<GuestFormSheet> {
         'phone':             _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         'email':             _email.text.trim().isEmpty ? null : _email.text.trim(),
         'notes':             _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+        'user_email':        authEmail,
+        'check_in':          checkInStr,
+        'check_out':         checkOutStr,
       });
 
       final resp = await http.post(
@@ -406,7 +544,7 @@ class _GuestFormSheetState extends State<GuestFormSheet> {
       Navigator.pop(context);
       widget.onSaved();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Guest saved ✓'), backgroundColor: Color(0xFF059669)),
+        const SnackBar(content: Text('Guest & Reservation saved ✓'), backgroundColor: Color(0xFF059669)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -499,6 +637,39 @@ class _GuestFormSheetState extends State<GuestFormSheet> {
               const _SectionLabel('CONTACT'),
               _field('Phone', _phone, keyboard: TextInputType.phone),
               _field('Email', _email, keyboard: TextInputType.emailAddress),
+
+              // RESERVATION DATE PICKERS
+              const _SectionLabel('RESERVATION DATES'),
+              Row(
+                children: [
+                  Expanded(
+                    child: ListTile(
+                      title: const Text('Check-In', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                      subtitle: Text(
+                        '${_checkInDate.year}-${_checkInDate.month.toString().padLeft(2, '0')}-${_checkInDate.day.toString().padLeft(2, '0')}',
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      trailing: const Icon(Icons.calendar_month, color: Color(0xFF3B82F6)),
+                      onTap: () => _pickDate(true),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  Expanded(
+                    child: ListTile(
+                      title: const Text('Check-Out', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                      subtitle: Text(
+                        '${_checkOutDate.year}-${_checkOutDate.month.toString().padLeft(2, '0')}-${_checkOutDate.day.toString().padLeft(2, '0')}',
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      trailing: const Icon(Icons.calendar_month, color: Color(0xFF3B82F6)),
+                      onTap: () => _pickDate(false),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
               const _SectionLabel('NOTES'),
               _field('Notes', _notes),
               const SizedBox(height: 8),

@@ -71,6 +71,7 @@ class Guest(Base):
     issuing_authority = Column(String(255), nullable=True)       # e.g. DEPT OF HOME AFFAIRS
     place_of_birth    = Column(String(100), nullable=True)       # e.g. ZAF
     passport_image    = Column(LargeBinary, nullable=True)       # raw JPEG/PNG bytes
+    user_email        = Column(String(255), nullable=True, index=True) # owner email
     notes             = Column(Text, nullable=True)
 
     reservations = relationship("Reservation", back_populates="guest", cascade="all, delete-orphan")

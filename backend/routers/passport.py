@@ -180,3 +180,44 @@ async def get_passport_image(
     if not guest or not guest.passport_image:
         raise HTTPException(status_code=404, detail="No passport image found")
     return Response(content=guest.passport_image, media_type="image/jpeg")
+
+
+@router.get("/search")
+async def search_passports_by_date(
+    date: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Search for guests who have a reservation overlapping the specified date (YYYY-MM-DD).
+    """
+    from datetime import datetime, date as date_type
+    from models import Reservation
+    try:
+        parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    stmt = (
+        select(Guest)
+        .join(Reservation, Guest.id == Reservation.guest_id)
+        .where(Reservation.check_in <= parsed_date)
+        .where(Reservation.check_out >= parsed_date)
+        .distinct()
+    )
+    result = await db.execute(stmt)
+    guests = result.scalars().all()
+    
+    out = []
+    for g in guests:
+        out.append({
+            "id": str(g.id),
+            "full_name": g.full_name,
+            "passport_number": g.passport_number,
+            "id_number": g.id_number,
+            "nationality": g.nationality,
+            "has_passport_image": bool(g.passport_image),
+            "date_of_expiry": g.date_of_expiry.isoformat() if g.date_of_expiry else None,
+            "place_of_birth": g.place_of_birth,
+            "user_email": g.user_email
+        })
+    return out

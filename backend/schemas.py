@@ -51,11 +51,27 @@ class GuestCreate(BaseModel):
     date_of_expiry: Optional[date] = None
     issuing_authority: Optional[str] = None
     place_of_birth: Optional[str] = None
+    user_email: Optional[str] = None
+    check_in: Optional[date] = None
+    check_out: Optional[date] = None
     notes: Optional[str] = None
 
-class GuestOut(GuestCreate):
+class GuestOut(BaseModel):
     id: uuid.UUID
     created_at: datetime
+    full_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    nationality: Optional[str] = None
+    id_number: Optional[str] = None
+    passport_number: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    date_of_issue: Optional[date] = None
+    date_of_expiry: Optional[date] = None
+    issuing_authority: Optional[str] = None
+    place_of_birth: Optional[str] = None
+    user_email: Optional[str] = None
+    notes: Optional[str] = None
     has_passport_image: bool = False
 
     model_config = {"from_attributes": True}

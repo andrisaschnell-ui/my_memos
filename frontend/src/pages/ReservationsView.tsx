@@ -16,6 +16,7 @@ interface Guest {
   issuing_authority?: string;
   place_of_birth?: string;
   has_passport_image?: boolean;
+  user_email?: string;
   notes?: string;
 }
 
@@ -47,6 +48,12 @@ export const ReservationsView: React.FC = () => {
   const [showResForm, setShowResForm] = useState<boolean>(false);
   const [showGuestForm, setShowGuestForm] = useState<boolean>(false);
 
+  // Passport Scan Upload/Rotation states
+  const [passportFile, setPassportFile] = useState<File | null>(null);
+  const [rotation, setRotation] = useState<number>(0);
+  const [ocrLoading, setOcrLoading] = useState<boolean>(false);
+  const [searchDate, setSearchDate] = useState<string>('');
+
   // Form State - Reservation
   const [resForm, setResForm] = useState({
     guest_id: '',
@@ -68,8 +75,16 @@ export const ReservationsView: React.FC = () => {
     full_name: '',
     email: '',
     phone: '',
-    nationality: 'Mozambique',
+    nationality: '',
     id_number: '',
+    passport_number: '',
+    date_of_birth: '',
+    date_of_issue: '',
+    date_of_expiry: '',
+    issuing_authority: '',
+    place_of_birth: '',
+    check_in: '',
+    check_out: '',
     notes: ''
   });
 
@@ -93,6 +108,18 @@ export const ReservationsView: React.FC = () => {
     loadData();
   }, []);
 
+  const fetchSearchResults = async (dateStr: string) => {
+    setLoading(true);
+    try {
+      const resp = await api.get('/passport/search', { params: { date: dateStr } });
+      setGuests(resp.data);
+    } catch (err) {
+      console.error('Error searching passports:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateReservation = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -110,13 +137,139 @@ export const ReservationsView: React.FC = () => {
   const handleCreateGuest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!guestForm.full_name) return;
+
+    // Default dates if empty
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const checkInDate = guestForm.check_in || today;
+    const checkOutDate = guestForm.check_out || tomorrow;
+
     try {
-      await api.post('/lodge/guests', guestForm);
+      const email = localStorage.getItem('auth_email') || '';
+      const payload = {
+        ...guestForm,
+        user_email: email,
+        check_in: checkInDate,
+        check_out: checkOutDate
+      };
+
+      const resp = await api.post('/lodge/guests', payload);
+      const guestId = resp.data.id;
+
+      // Upload passport image if we scanned one
+      if (passportFile && guestId) {
+        // Rotate using Canvas to save correctly oriented image to DB
+        const img = new Image();
+        img.src = URL.createObjectURL(passportFile);
+        await new Promise((res) => { img.onload = res; });
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+
+        if (rotation === 90 || rotation === 270) {
+          canvas.width = img.height;
+          canvas.height = img.width;
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+        const rotatedBlob = await new Promise<Blob | null>((res) => {
+          canvas.toBlob((b) => res(b), 'image/jpeg', 0.95);
+        });
+
+        if (rotatedBlob) {
+          const imgFormData = new FormData();
+          imgFormData.append('file', rotatedBlob, 'passport.jpg');
+          await api.post(`/passport/guests/${guestId}/passport-image`, imgFormData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        }
+      }
+
       setShowGuestForm(false);
-      setGuestForm({ full_name: '', email: '', phone: '', nationality: 'Mozambique', id_number: '', notes: '' });
+      // Reset form states
+      setGuestForm({
+        full_name: '', email: '', phone: '', nationality: '', id_number: '',
+        passport_number: '', date_of_birth: '', date_of_issue: '', date_of_expiry: '',
+        issuing_authority: '', place_of_birth: '', check_in: '', check_out: '', notes: ''
+      });
+      setPassportFile(null);
+      setRotation(0);
       loadData();
     } catch (err) {
-      alert('Error saving guest');
+      alert('Error saving guest profile: ' + err);
+    }
+  };
+
+  const handleOcrScan = async () => {
+    if (!passportFile) return;
+    setOcrLoading(true);
+    try {
+      const img = new Image();
+      img.src = URL.createObjectURL(passportFile);
+      await new Promise((res) => { img.onload = res; });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+
+      if (rotation === 90 || rotation === 270) {
+        canvas.width = img.height;
+        canvas.height = img.width;
+      } else {
+        canvas.width = img.width;
+        canvas.height = img.height;
+      }
+
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+      const rotatedBlob = await new Promise<Blob | null>((res) => {
+        canvas.toBlob((b) => res(b), 'image/jpeg', 0.95);
+      });
+
+      if (!rotatedBlob) throw new Error('Canvas rotation failed');
+
+      const formData = new FormData();
+      formData.append('file', rotatedBlob, 'passport.jpg');
+
+      const resp = await api.post('/passport/scan', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (resp.data.success) {
+        const ocr = resp.data.data;
+        const today = new Date().toISOString().split('T')[0];
+        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+        setGuestForm({
+          full_name: ocr.full_name || '',
+          email: '',
+          phone: '',
+          nationality: ocr.nationality || '',
+          id_number: ocr.id_number || '',
+          passport_number: ocr.passport_number || '',
+          date_of_birth: ocr.date_of_birth || '',
+          date_of_issue: ocr.date_of_issue || '',
+          date_of_expiry: ocr.date_of_expiry || '',
+          issuing_authority: ocr.issuing_authority || '',
+          place_of_birth: ocr.place_of_birth || '',
+          check_in: today,
+          check_out: tomorrow,
+          notes: ''
+        });
+
+        setShowGuestForm(true);
+      }
+    } catch (err) {
+      alert('OCR Scan failed: ' + err);
+    } finally {
+      setOcrLoading(false);
     }
   };
 
@@ -280,97 +433,182 @@ export const ReservationsView: React.FC = () => {
           </table>
         </div>
       ) : (
-        /* Guest Directory Table */
-        <div style={{ background: '#1e293b', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', color: '#f8fafc' }}>
-            <thead>
-              <tr style={{ background: '#0f172a', textAlign: 'left', borderBottom: '1px solid #334155' }}>
-                <th style={{ padding: '1rem' }}>{t.guestName}</th>
-                <th style={{ padding: '1rem' }}>Contact</th>
-                <th style={{ padding: '1rem' }}>{t.nationality}</th>
-                <th style={{ padding: '1rem' }}>{t.idNumber}</th>
-                <th style={{ padding: '1rem' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {guests.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-                    No guest profiles found.
-                  </td>
+        /* Guest Directory Tab */
+        <div>
+          {/* Admin Upload / Scan Box */}
+          <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '14px', marginBottom: '1.5rem', border: '1px dashed #475569' }}>
+            <h4 style={{ margin: '0 0 1rem 0', color: '#38bdf8' }}>📷 Admin Passport Scan Upload</h4>
+            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setPassportFile(e.target.files[0]);
+                    setRotation(0);
+                  }
+                }}
+                style={{ color: '#94a3b8' }}
+              />
+              {passportFile && (
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <div style={{ position: 'relative', width: '120px', height: '90px', borderRadius: '8px', overflow: 'hidden', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img
+                      src={URL.createObjectURL(passportFile)}
+                      alt="Preview"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        transform: `rotate(${rotation}deg)`,
+                        transition: 'transform 0.2s ease'
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => setRotation((prev) => (prev + 90) % 360)}
+                    style={{ padding: '0.4rem 0.8rem', background: '#475569', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    🔄 Rotate 90°
+                  </button>
+                  <button
+                    onClick={handleOcrScan}
+                    disabled={ocrLoading}
+                    style={{ padding: '0.5rem 1.2rem', background: '#059669', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                  >
+                    {ocrLoading ? 'Extracting OCR...' : '⚡ Run OCR Scan'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Search Filter by Date */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem', background: '#1e293b', padding: '1rem', borderRadius: '12px' }}>
+            <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>🔍 Search Passports by Date:</label>
+            <input
+              type="date"
+              value={searchDate}
+              onChange={(e) => {
+                const d = e.target.value;
+                setSearchDate(d);
+                if (d) {
+                  fetchSearchResults(d);
+                } else {
+                  loadData();
+                }
+              }}
+              style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#fff' }}
+            />
+            {searchDate && (
+              <button
+                onClick={() => {
+                  setSearchDate('');
+                  loadData();
+                }}
+                style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>
+
+          {/* Guest Directory Table */}
+          <div style={{ background: '#1e293b', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#f8fafc' }}>
+              <thead>
+                <tr style={{ background: '#0f172a', textAlign: 'left', borderBottom: '1px solid #334155' }}>
+                  <th style={{ padding: '1rem' }}>{t.guestName}</th>
+                  <th style={{ padding: '1rem' }}>Contact</th>
+                  <th style={{ padding: '1rem' }}>{t.nationality}</th>
+                  <th style={{ padding: '1rem' }}>{t.idNumber}</th>
+                  <th style={{ padding: '1rem' }}>Actions</th>
                 </tr>
-              ) : (
-                guests.map((g) => (
-                  <tr key={g.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <td style={{ padding: '1rem', fontWeight: 600 }}>
-                      <div>{g.full_name}</div>
-                      {g.has_passport_image && (
-                        <a
-                          href={`${api.defaults.baseURL}/passport/guests/${g.id}/passport-image`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '0.75rem',
-                            color: '#38bdf8',
-                            textDecoration: 'none',
-                            marginTop: '0.25rem',
-                            fontWeight: 'normal'
-                          }}
-                        >
-                          📷 View Passport File
-                        </a>
-                      )}
-                    </td>
-                    <td style={{ padding: '1rem', fontSize: '0.9rem' }}>
-                      <div>{g.phone || 'No phone'}</div>
-                      <div style={{ color: '#94a3b8' }}>{g.email}</div>
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      <div>{g.nationality || '—'}</div>
-                      {g.place_of_birth && (
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.15rem' }}>Born: {g.place_of_birth}</div>
-                      )}
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      {g.passport_number ? (
-                        <div>
-                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Passport:</span>
-                          <strong>{g.passport_number}</strong>
-                        </div>
-                      ) : null}
-                      {g.id_number ? (
-                        <div style={{ marginTop: g.passport_number ? '0.25rem' : 0 }}>
-                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>ID Number:</span>
-                          <strong>{g.id_number}</strong>
-                        </div>
-                      ) : null}
-                      {g.date_of_expiry ? (
-                        <div style={{
-                          fontSize: '0.75rem',
-                          color: g.date_of_expiry && (new Date(g.date_of_expiry).getTime() - Date.now() < 90 * 86400 * 1000) ? '#f97316' : '#94a3b8',
-                          marginTop: '0.25rem'
-                        }}>
-                          Expires: {g.date_of_expiry}
-                        </div>
-                      ) : null}
-                      {!g.passport_number && !g.id_number ? '—' : null}
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      <button
-                        onClick={() => handleDeleteGuest(g.id)}
-                        style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1.1rem' }}
-                      >
-                        🗑️
-                      </button>
+              </thead>
+              <tbody>
+                {guests.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                      No guest profiles found.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  guests.map((g) => (
+                    <tr key={g.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '1rem', fontWeight: 600 }}>
+                        <div>{g.full_name}</div>
+                        {g.has_passport_image && (
+                          <a
+                            href={`${api.defaults.baseURL}/passport/guests/${g.id}/passport-image`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '0.75rem',
+                              color: '#38bdf8',
+                              textDecoration: 'none',
+                              marginTop: '0.25rem',
+                              fontWeight: 'normal'
+                            }}
+                          >
+                            📷 View Passport File
+                          </a>
+                        )}
+                      </td>
+                      <td style={{ padding: '1rem', fontSize: '0.9rem' }}>
+                        <div>{g.phone || 'No phone'}</div>
+                        <div style={{ color: '#94a3b8' }}>{g.email}</div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div>{g.nationality || '—'}</div>
+                        {g.place_of_birth && (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.15rem' }}>Born: {g.place_of_birth}</div>
+                        )}
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        {g.passport_number ? (
+                          <div>
+                            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Passport:</span>
+                            <strong>{g.passport_number}</strong>
+                          </div>
+                        ) : null}
+                        {g.id_number ? (
+                          <div style={{ marginTop: g.passport_number ? '0.25rem' : 0 }}>
+                            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>ID Number:</span>
+                            <strong>{g.id_number}</strong>
+                          </div>
+                        ) : null}
+                        {g.date_of_expiry ? (
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: g.date_of_expiry && (new Date(g.date_of_expiry).getTime() - Date.now() < 90 * 86400 * 1000) ? '#f97316' : '#94a3b8',
+                            marginTop: '0.25rem'
+                          }}>
+                            Expires: {g.date_of_expiry}
+                          </div>
+                        ) : null}
+                        {g.user_email && (
+                          <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.25rem' }}>
+                            Created by: {g.user_email}
+                          </div>
+                        )}
+                        {!g.passport_number && !g.id_number ? '—' : null}
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <button
+                          onClick={() => handleDeleteGuest(g.id)}
+                          style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1.1rem' }}
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -495,8 +733,8 @@ export const ReservationsView: React.FC = () => {
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }}>
-          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: '16px', width: '450px', maxWidth: '90%', color: '#fff' }}>
-            <h3 style={{ marginTop: 0, color: '#3b82f6' }}>+ Add New Guest Profile</h3>
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: '16px', width: '500px', maxWidth: '90%', color: '#fff', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ marginTop: 0, color: '#3b82f6' }}>+ Add / Edit Guest Profile</h3>
             <form onSubmit={handleCreateGuest} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{t.guestName} *</label>
@@ -509,17 +747,31 @@ export const ReservationsView: React.FC = () => {
                   style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
                 />
               </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{t.phone}</label>
                   <input
                     type="text"
-                    placeholder="+258 ..."
+                    placeholder="+27 ..."
                     value={guestForm.phone}
                     onChange={(e) => setGuestForm({ ...guestForm, phone: e.target.value })}
                     style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
                   />
                 </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Email</label>
+                  <input
+                    type="email"
+                    placeholder="email@example.com"
+                    value={guestForm.email}
+                    onChange={(e) => setGuestForm({ ...guestForm, email: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{t.nationality}</label>
                   <input
@@ -529,19 +781,123 @@ export const ReservationsView: React.FC = () => {
                     style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
                   />
                 </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Passport Number</label>
+                  <input
+                    type="text"
+                    value={guestForm.passport_number}
+                    onChange={(e) => setGuestForm({ ...guestForm, passport_number: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
               </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>National ID Number</label>
+                  <input
+                    type="text"
+                    value={guestForm.id_number}
+                    onChange={(e) => setGuestForm({ ...guestForm, id_number: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Place of Birth</label>
+                  <input
+                    type="text"
+                    value={guestForm.place_of_birth}
+                    onChange={(e) => setGuestForm({ ...guestForm, place_of_birth: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Date of Birth</label>
+                  <input
+                    type="date"
+                    value={guestForm.date_of_birth}
+                    onChange={(e) => setGuestForm({ ...guestForm, date_of_birth: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Date of Expiry</label>
+                  <input
+                    type="date"
+                    value={guestForm.date_of_expiry}
+                    onChange={(e) => setGuestForm({ ...guestForm, date_of_expiry: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Date of Issue</label>
+                  <input
+                    type="date"
+                    value={guestForm.date_of_issue}
+                    onChange={(e) => setGuestForm({ ...guestForm, date_of_issue: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Issuing Authority</label>
+                  <input
+                    type="text"
+                    value={guestForm.issuing_authority}
+                    onChange={(e) => setGuestForm({ ...guestForm, issuing_authority: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+              </div>
+
+              <h4 style={{ margin: '0.5rem 0 0 0', color: '#10b981' }}>🏨 Linked Reservation Period</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Check-In Date</label>
+                  <input
+                    type="date"
+                    value={guestForm.check_in}
+                    onChange={(e) => setGuestForm({ ...guestForm, check_in: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Check-Out Date</label>
+                  <input
+                    type="date"
+                    value={guestForm.check_out}
+                    onChange={(e) => setGuestForm({ ...guestForm, check_out: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+              </div>
+
               <div>
-                <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{t.idNumber}</label>
-                <input
-                  type="text"
-                  placeholder="Passport / ID number"
-                  value={guestForm.id_number}
-                  onChange={(e) => setGuestForm({ ...guestForm, id_number: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Notes</label>
+                <textarea
+                  value={guestForm.notes}
+                  onChange={(e) => setGuestForm({ ...guestForm, notes: e.target.value })}
+                  style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem', minHeight: '60px' }}
                 />
               </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
-                <button type="button" onClick={() => setShowGuestForm(false)} style={{ padding: '0.6rem 1rem', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>{t.cancel}</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGuestForm(false);
+                    setPassportFile(null);
+                    setRotation(0);
+                  }}
+                  style={{ padding: '0.6rem 1rem', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                >
+                  {t.cancel}
+                </button>
                 <button type="submit" style={{ padding: '0.6rem 1.2rem', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{t.save}</button>
               </div>
             </form>

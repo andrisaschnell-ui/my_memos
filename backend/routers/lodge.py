@@ -120,10 +120,28 @@ async def list_guests(db: AsyncSession = Depends(get_db)):
 
 @router.post("/guests", response_model=GuestOut, status_code=201)
 async def create_guest(data: GuestCreate, db: AsyncSession = Depends(get_db)):
-    g = Guest(**data.model_dump())
+    check_in = data.check_in
+    check_out = data.check_out
+    guest_data = data.model_dump(exclude={"check_in", "check_out"})
+    
+    g = Guest(**guest_data)
     db.add(g)
     await db.commit()
     await db.refresh(g)
+    
+    if check_in and check_out:
+        from models import Reservation
+        res = Reservation(
+            guest_id=g.id,
+            check_in=check_in,
+            check_out=check_out,
+            room_or_unit="Chalet",
+            status="confirmed",
+            source="direct"
+        )
+        db.add(res)
+        await db.commit()
+        
     g.has_passport_image = bool(g.passport_image)
     return g
 
@@ -133,10 +151,35 @@ async def update_guest(guest_id: uuid.UUID, data: GuestCreate, db: AsyncSession 
     g = res.scalar_one_or_none()
     if not g:
         raise HTTPException(status_code=404, detail="Guest not found")
-    for k, v in data.model_dump().items():
+        
+    check_in = data.check_in
+    check_out = data.check_out
+    guest_data = data.model_dump(exclude={"check_in", "check_out"})
+    
+    for k, v in guest_data.items():
         setattr(g, k, v)
     await db.commit()
     await db.refresh(g)
+    
+    if check_in and check_out:
+        from models import Reservation
+        res_stmt = await db.execute(select(Reservation).where(Reservation.guest_id == g.id).order_by(Reservation.created_at.desc()))
+        existing_res = res_stmt.scalars().first()
+        if existing_res:
+            existing_res.check_in = check_in
+            existing_res.check_out = check_out
+        else:
+            new_res = Reservation(
+                guest_id=g.id,
+                check_in=check_in,
+                check_out=check_out,
+                room_or_unit="Chalet",
+                status="confirmed",
+                source="direct"
+            )
+            db.add(new_res)
+        await db.commit()
+        
     g.has_passport_image = bool(g.passport_image)
     return g
 

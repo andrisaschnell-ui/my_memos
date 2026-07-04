@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
                     await conn.execute(text("ALTER TABLE guests ADD COLUMN IF NOT EXISTS issuing_authority VARCHAR(255)"))
                     await conn.execute(text("ALTER TABLE guests ADD COLUMN IF NOT EXISTS place_of_birth VARCHAR(100)"))
                     await conn.execute(text("ALTER TABLE guests ADD COLUMN IF NOT EXISTS passport_image BYTEA"))
+                    await conn.execute(text("ALTER TABLE guests ADD COLUMN IF NOT EXISTS user_email VARCHAR(255)"))
                     logger.info("Table migrations completed.")
                 except Exception as ex:
                     logger.warning(f"Column migration warning: {ex}")
