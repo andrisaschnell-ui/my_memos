@@ -237,7 +237,7 @@ export default function App() {
       const list = syncResp.data || []
       setLodges(list)
       
-      const exists = list.find((l) => l.id === activeLodgeId)
+      const exists = list.find((l: any) => l.id === activeLodgeId)
       if (exists) {
         localStorage.setItem('activeLodgeName', exists.name)
       } else if (list.length > 0) {

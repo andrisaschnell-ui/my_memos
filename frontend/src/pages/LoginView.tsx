@@ -13,6 +13,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [showPin, setShowPin] = useState(false)
 
   // Verified auth states
   const [verifiedEmail, setVerifiedEmail] = useState('')
@@ -319,13 +320,24 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               />
             </div>
             <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>Your 6-Digit PIN</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>Your 6-Digit PIN</label>
+                <label style={{ fontSize: 12, color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={showPin}
+                    onChange={(e) => setShowPin(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  Show PIN
+                </label>
+              </div>
               <input
-                type="password"
+                type={showPin ? "text" : "password"}
                 required
                 value={pin}
                 onChange={e => setPin(e.target.value)}
-                placeholder="••••••"
+                placeholder={showPin ? "123456" : "••••••"}
                 style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#fff', fontSize: 18, letterSpacing: 4, boxSizing: 'border-box' }}
               />
             </div>
@@ -351,14 +363,25 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               />
             </div>
             <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>Choose a 6-Digit PIN</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>Choose a 6-Digit PIN</label>
+                <label style={{ fontSize: 12, color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={showPin}
+                    onChange={(e) => setShowPin(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  Show PIN
+                </label>
+              </div>
               <input
-                type="text"
+                type={showPin ? "text" : "password"}
                 required
                 maxLength={12}
                 value={pin}
                 onChange={e => setPin(e.target.value)}
-                placeholder="123456"
+                placeholder={showPin ? "123456" : "••••••"}
                 style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#fff', fontSize: 18, letterSpacing: 4, boxSizing: 'border-box' }}
               />
               <span style={{ display: 'block', fontSize: 11, color: '#64748B', marginTop: 4 }}>
