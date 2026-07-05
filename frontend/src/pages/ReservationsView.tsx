@@ -49,6 +49,25 @@ export const ReservationsView: React.FC = () => {
   const [showGuestForm, setShowGuestForm] = useState<boolean>(false);
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
 
+  const activeLodgeName = localStorage.getItem('activeLodgeName') || 'Default Lodge';
+  const chaletStorageKey = `chalets_${activeLodgeName}`;
+  const defaultChalets = Array.from({ length: 10 }, (_, i) => `Chalet ${i + 1}`);
+
+  const [chaletList, setChaletList] = useState<string[]>(() => {
+    const saved = localStorage.getItem(chaletStorageKey);
+    return saved ? JSON.parse(saved) : defaultChalets;
+  });
+
+  const [showChaletEditModal, setShowChaletEditModal] = useState(false);
+  const [chaletInputs, setChaletInputs] = useState<string[]>(chaletList);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(chaletStorageKey);
+    const list = saved ? JSON.parse(saved) : defaultChalets;
+    setChaletList(list);
+    setChaletInputs(list);
+  }, [activeLodgeName]);
+
   // Passport Scan Upload/Rotation states
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [rotation, setRotation] = useState<number>(0);
@@ -86,6 +105,7 @@ export const ReservationsView: React.FC = () => {
     place_of_birth: '',
     check_in: '',
     check_out: '',
+    room_or_unit: '',
     notes: ''
   });
 
@@ -152,6 +172,7 @@ export const ReservationsView: React.FC = () => {
       place_of_birth: g.place_of_birth || '',
       check_in: linkedRes ? linkedRes.check_in : '',
       check_out: linkedRes ? linkedRes.check_out : '',
+      room_or_unit: linkedRes ? (linkedRes.room_or_unit || chaletList[0] || 'Chalet 1') : (chaletList[0] || 'Chalet 1'),
       notes: g.notes || ''
     });
     setShowGuestForm(true);
@@ -224,7 +245,9 @@ export const ReservationsView: React.FC = () => {
       setGuestForm({
         full_name: '', email: '', phone: '', nationality: '', id_number: '',
         passport_number: '', date_of_birth: '', date_of_issue: '', date_of_expiry: '',
-        issuing_authority: '', place_of_birth: '', check_in: '', check_out: '', notes: ''
+        issuing_authority: '', place_of_birth: '', check_in: '', check_out: '',
+        room_or_unit: chaletList[0] || 'Chalet 1',
+        notes: ''
       });
       setPassportFile(null);
       setRotation(0);
@@ -290,6 +313,7 @@ export const ReservationsView: React.FC = () => {
           place_of_birth: ocr.place_of_birth || '',
           check_in: today,
           check_out: tomorrow,
+          room_or_unit: chaletList[0] || 'Chalet 1',
           notes: ''
         });
 
@@ -352,7 +376,9 @@ export const ReservationsView: React.FC = () => {
               setGuestForm({
                 full_name: '', email: '', phone: '', nationality: '', id_number: '',
                 passport_number: '', date_of_birth: '', date_of_issue: '', date_of_expiry: '',
-                issuing_authority: '', place_of_birth: '', check_in: '', check_out: '', notes: ''
+                issuing_authority: '', place_of_birth: '', check_in: '', check_out: '',
+                room_or_unit: chaletList[0] || 'Chalet 1',
+                notes: ''
               });
               setPassportFile(null);
               setRotation(0);
@@ -924,6 +950,30 @@ export const ReservationsView: React.FC = () => {
                 </div>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Room / Chalet</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowChaletEditModal(true)}
+                      style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      ✏️ Edit Chalet Names
+                    </button>
+                  </div>
+                  <select
+                    value={guestForm.room_or_unit}
+                    onChange={(e) => setGuestForm({ ...guestForm, room_or_unit: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155' }}
+                  >
+                    {chaletList.map((ch, idx) => (
+                      <option key={idx} value={ch}>{ch}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Notes</label>
                 <textarea
@@ -948,6 +998,61 @@ export const ReservationsView: React.FC = () => {
                 <button type="submit" style={{ padding: '0.6rem 1.2rem', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{t.save}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Chalet Names Modal */}
+      {showChaletEditModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+        }}>
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: '16px', width: '450px', maxWidth: '90%', color: '#fff', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ marginTop: 0, color: '#38bdf8' }}>✏️ Edit Chalet Names</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              {chaletInputs.map((val, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8', width: '70px' }}>Chalet {idx + 1}:</span>
+                  <input
+                    type="text"
+                    value={val}
+                    onChange={(e) => {
+                      const updated = [...chaletInputs];
+                      updated[idx] = e.target.value;
+                      setChaletInputs(updated);
+                    }}
+                    style={{ flex: 1, padding: '0.4rem', borderRadius: '6px', border: '1px solid #334155', background: '#0f172a', color: '#fff' }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setChaletInputs(chaletList);
+                  setShowChaletEditModal(false);
+                }}
+                style={{ padding: '0.5rem 1rem', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem(chaletStorageKey, JSON.stringify(chaletInputs));
+                  setChaletList(chaletInputs);
+                  setShowChaletEditModal(false);
+                  if (!guestForm.room_or_unit || !chaletInputs.includes(guestForm.room_or_unit)) {
+                    setGuestForm({ ...guestForm, room_or_unit: chaletInputs[0] });
+                  }
+                }}
+                style={{ padding: '0.5rem 1.2rem', background: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
       )}

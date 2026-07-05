@@ -173,7 +173,8 @@ async def create_guest(
 ):
     check_in = parse_date(data.check_in)
     check_out = parse_date(data.check_out)
-    guest_data = data.model_dump(exclude={"check_in", "check_out"})
+    room_or_unit = data.room_or_unit or "Chalet"
+    guest_data = data.model_dump(exclude={"check_in", "check_out", "room_or_unit"})
     
     # Safely parse date fields
     guest_data["date_of_birth"] = parse_date(guest_data.get("date_of_birth"))
@@ -194,7 +195,7 @@ async def create_guest(
             guest_id=g.id,
             check_in=check_in,
             check_out=check_out,
-            room_or_unit="Chalet",
+            room_or_unit=room_or_unit,
             status="confirmed",
             source="direct"
         )
@@ -221,7 +222,8 @@ async def update_guest(
         
     check_in = parse_date(data.check_in)
     check_out = parse_date(data.check_out)
-    guest_data = data.model_dump(exclude={"check_in", "check_out"})
+    room_or_unit = data.room_or_unit or "Chalet"
+    guest_data = data.model_dump(exclude={"check_in", "check_out", "room_or_unit"})
     
     # Safely parse date fields
     guest_data["date_of_birth"] = parse_date(guest_data.get("date_of_birth"))
@@ -240,12 +242,13 @@ async def update_guest(
         if existing_res:
             existing_res.check_in = check_in
             existing_res.check_out = check_out
+            existing_res.room_or_unit = room_or_unit
         else:
             new_res = Reservation(
                 guest_id=g.id,
                 check_in=check_in,
                 check_out=check_out,
-                room_or_unit="Chalet",
+                room_or_unit=room_or_unit,
                 status="confirmed",
                 source="direct"
             )

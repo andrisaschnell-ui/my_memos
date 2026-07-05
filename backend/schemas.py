@@ -54,6 +54,7 @@ class GuestCreate(BaseModel):
     user_email: Optional[str] = None
     check_in: Optional[str] = None
     check_out: Optional[str] = None
+    room_or_unit: Optional[str] = None
     notes: Optional[str] = None
 
 class GuestOut(BaseModel):

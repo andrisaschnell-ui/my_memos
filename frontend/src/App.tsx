@@ -49,10 +49,13 @@ function Navigation({
   const authEmail = localStorage.getItem('auth_email') || ''
   const isAdmin = authRole === 'admin' || authEmail === 'andrisa.schnell@gmail.com'
 
+  const activeLodge = lodges.find((l) => l.id === activeLodgeId);
+  const activeLodgeName = activeLodge ? activeLodge.name : 'Landco Lodge Assistant';
+
   return (
     <nav className="no-print" style={{ background: '#0f172a', borderBottom: '1px solid #1e293b', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 18, fontWeight: 800, color: '#38bdf8' }}>
-        🏨 Landco Lodge Assistant
+        🏨 {activeLodgeName}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Link to="/lodge" style={navStyle('/lodge')}>🏠 {t.home}</Link>
