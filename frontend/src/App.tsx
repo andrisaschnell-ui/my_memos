@@ -198,10 +198,23 @@ export default function App() {
         }
         setLodgeInputs(inputs)
 
-        if (list.length > 0 && !localStorage.getItem('activeLodgeId')) {
+        // Pick first lodge if none selected
+        const currentId = localStorage.getItem('activeLodgeId')
+        if (list.length > 0 && !currentId) {
           localStorage.setItem('activeLodgeId', list[0].id)
           localStorage.setItem('activeLodgeName', list[0].name)
           setActiveLodgeId(list[0].id)
+        } else if (currentId && list.length > 0) {
+          // Always sync the name for the active lodge (handles renames)
+          const active = list.find((l: { id: string; name: string }) => l.id === currentId)
+          if (active) {
+            localStorage.setItem('activeLodgeName', active.name)
+          } else {
+            // Active lodge no longer exists — fall back to first
+            localStorage.setItem('activeLodgeId', list[0].id)
+            localStorage.setItem('activeLodgeName', list[0].name)
+            setActiveLodgeId(list[0].id)
+          }
         }
       } catch (err) {
         console.error('Error fetching lodges:', err)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Header
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,10 +10,25 @@ import json
 import re
 import httpx
 import logging
+from typing import Optional
+import uuid
 
 logger = logging.getLogger("passport")
 
 router = APIRouter(prefix="/passport", tags=["passport"])
+
+async def get_current_user_email(x_user_email: Optional[str] = Header(None, alias="X-User-Email")) -> Optional[str]:
+    if not x_user_email:
+        return None
+    return x_user_email.strip().lower()
+
+async def get_active_lodge_id(x_lodge_id: Optional[str] = Header(None, alias="X-Lodge-Id")) -> Optional[uuid.UUID]:
+    if not x_lodge_id:
+        return None
+    try:
+        return uuid.UUID(x_lodge_id)
+    except ValueError:
+        return None
 
 # Load NVIDIA API Key with local file fallback
 NVIDIA_API_KEY = os.getenv("NVIDIA-KEY") or os.getenv("NVIDIA_API_KEY")
@@ -165,12 +180,12 @@ async def upload_passport_image(
 @router.get("/guests/{guest_id}/passport-image")
 async def get_passport_image(
     guest_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_email: Optional[str] = Depends(get_current_user_email)
 ):
     """
-    Return the stored passport image.
+    Return the stored passport image. User must own the guest record.
     """
-    import uuid
     try:
         g_uuid = uuid.UUID(guest_id)
     except ValueError:
@@ -180,16 +195,22 @@ async def get_passport_image(
     guest = result.scalar_one_or_none()
     if not guest or not guest.passport_image:
         raise HTTPException(status_code=404, detail="No passport image found")
+    # Enforce ownership
+    if user_email and guest.user_email and guest.user_email != user_email:
+        raise HTTPException(status_code=403, detail="Access denied")
     return Response(content=guest.passport_image, media_type="image/jpeg")
 
 
 @router.get("/search")
 async def search_passports_by_date(
     date: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_email: Optional[str] = Depends(get_current_user_email),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
 ):
     """
     Search for guests who have a reservation overlapping the specified date (YYYY-MM-DD).
+    Scoped to the requesting user and lodge.
     """
     from datetime import datetime, date as date_type
     from models import Reservation
@@ -205,6 +226,11 @@ async def search_passports_by_date(
         .where(Reservation.check_out >= parsed_date)
         .distinct()
     )
+    if user_email:
+        stmt = stmt.where(Guest.user_email == user_email)
+    if lodge_id:
+        stmt = stmt.where(Guest.lodge_id == lodge_id)
+
     result = await db.execute(stmt)
     guests = result.scalars().all()
     

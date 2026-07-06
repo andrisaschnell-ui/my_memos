@@ -16,6 +16,12 @@ export const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const email = localStorage.getItem('auth_email')
+
+  // Always send user identity header
+  if (email) {
+    config.headers['X-User-Email'] = email
+  }
+
   if (email && config.url?.includes('/recordings')) {
     if (config.method?.toLowerCase() === 'get') {
       config.params = { ...(config.params || {}), user_email: email }

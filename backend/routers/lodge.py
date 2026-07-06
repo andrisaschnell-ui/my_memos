@@ -25,6 +25,12 @@ async def get_active_lodge_id(x_lodge_id: Optional[str] = Header(None, alias="X-
     except ValueError:
         return None
 
+async def get_current_user_email(x_user_email: Optional[str] = Header(None, alias="X-User-Email")) -> Optional[str]:
+    """Extract and normalize the caller's email from the X-User-Email header."""
+    if not x_user_email:
+        return None
+    return x_user_email.strip().lower()
+
 def parse_date(date_str: Optional[str]) -> Optional[date]:
     if not date_str:
         return None
@@ -154,9 +160,12 @@ async def get_dashboard_summary(
 @router.get("/guests", response_model=List[GuestOut])
 async def list_guests(
     db: AsyncSession = Depends(get_db),
-    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
 ):
     stmt = select(Guest)
+    if user_email:
+        stmt = stmt.where(Guest.user_email == user_email)
     if lodge_id:
         stmt = stmt.where(Guest.lodge_id == lodge_id)
     res = await db.execute(stmt.order_by(Guest.full_name.asc()))
@@ -169,7 +178,8 @@ async def list_guests(
 async def create_guest(
     data: GuestCreate,
     db: AsyncSession = Depends(get_db),
-    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
 ):
     check_in = parse_date(data.check_in)
     check_out = parse_date(data.check_out)
@@ -180,6 +190,10 @@ async def create_guest(
     guest_data["date_of_birth"] = parse_date(guest_data.get("date_of_birth"))
     guest_data["date_of_issue"] = parse_date(guest_data.get("date_of_issue"))
     guest_data["date_of_expiry"] = parse_date(guest_data.get("date_of_expiry"))
+    
+    # Always stamp the owner email from the authenticated header
+    if user_email:
+        guest_data["user_email"] = user_email
     
     g = Guest(**guest_data)
     if lodge_id:
@@ -210,9 +224,12 @@ async def update_guest(
     guest_id: uuid.UUID,
     data: GuestCreate,
     db: AsyncSession = Depends(get_db),
-    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
 ):
     stmt = select(Guest).where(Guest.id == guest_id)
+    if user_email:
+        stmt = stmt.where(Guest.user_email == user_email)
     if lodge_id:
         stmt = stmt.where(Guest.lodge_id == lodge_id)
     res = await db.execute(stmt)
@@ -229,6 +246,10 @@ async def update_guest(
     guest_data["date_of_birth"] = parse_date(guest_data.get("date_of_birth"))
     guest_data["date_of_issue"] = parse_date(guest_data.get("date_of_issue"))
     guest_data["date_of_expiry"] = parse_date(guest_data.get("date_of_expiry"))
+    
+    # Preserve owner email
+    if user_email:
+        guest_data["user_email"] = user_email
     
     for k, v in guest_data.items():
         setattr(g, k, v)
@@ -262,9 +283,12 @@ async def update_guest(
 async def delete_guest(
     guest_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
 ):
     stmt = select(Guest).where(Guest.id == guest_id)
+    if user_email:
+        stmt = stmt.where(Guest.user_email == user_email)
     if lodge_id:
         stmt = stmt.where(Guest.lodge_id == lodge_id)
     res = await db.execute(stmt)
@@ -283,9 +307,12 @@ async def list_reservations(
     upcoming: Optional[int] = None,
     status_filter: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
 ):
     query = select(Reservation).join(Guest)
+    if user_email:
+        query = query.where(Guest.user_email == user_email)
     if lodge_id:
         query = query.where(Guest.lodge_id == lodge_id)
         
