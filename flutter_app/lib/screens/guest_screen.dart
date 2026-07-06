@@ -96,12 +96,16 @@ class _GuestScreenState extends State<GuestScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lodgeId = prefs.getString('active_lodge_id') ?? '';
+      final userEmail = prefs.getString('auth_email') ?? '';
       
       final Map<String, String> headers = {
         'Authorization': 'Bearer $_token',
       };
       if (lodgeId.isNotEmpty) {
         headers['X-Lodge-Id'] = lodgeId;
+      }
+      if (userEmail.isNotEmpty) {
+        headers['X-User-Email'] = userEmail;
       }
 
       if (_selectedFilterDate != null) {
@@ -546,6 +550,9 @@ class _GuestFormSheetState extends State<GuestFormSheet> {
       };
       if (lodgeId.isNotEmpty) {
         headers['X-Lodge-Id'] = lodgeId;
+      }
+      if (authEmail != null && authEmail.isNotEmpty) {
+        headers['X-User-Email'] = authEmail;
       }
 
       final isEditing = widget.prefilled != null && widget.prefilled!.id.isNotEmpty;

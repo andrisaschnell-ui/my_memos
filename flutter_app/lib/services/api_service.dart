@@ -12,6 +12,18 @@ class ApiService {
     return prefs.getString('auth_email');
   }
 
+  /// Build standard request headers with user identity and active lodge.
+  static Future<Map<String, String>> _getHeaders({bool json = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('auth_email') ?? '';
+    final lodgeId = prefs.getString('active_lodge_id') ?? '';
+    final headers = <String, String>{};
+    if (json) headers['Content-Type'] = 'application/json';
+    if (email.isNotEmpty) headers['X-User-Email'] = email;
+    if (lodgeId.isNotEmpty) headers['X-Lodge-Id'] = lodgeId;
+    return headers;
+  }
+
   static Future<Recording> uploadAudio({
     required File audioFile,
     required String type,
@@ -31,6 +43,9 @@ class ApiService {
     if (userEmail != null && userEmail.isNotEmpty) {
       request.fields['user_email'] = userEmail;
     }
+    // Add identity/lodge headers
+    final headers = await _getHeaders();
+    request.headers.addAll(headers);
     request.files.add(await http.MultipartFile.fromPath(
       'audio',
       audioFile.path,
@@ -49,7 +64,8 @@ class ApiService {
     final userEmail = await getAuthEmail();
     final query = userEmail != null && userEmail.isNotEmpty ? '?user_email=${Uri.encodeComponent(userEmail)}' : '';
     final uri = Uri.parse('$BASE_URL/recordings/by-date/$dateStr$query');
-    final response = await http.get(uri);
+    final headers = await _getHeaders();
+    final response = await http.get(uri, headers: headers);
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
       return data.map((j) => Recording.fromJson(j)).toList();
@@ -61,7 +77,8 @@ class ApiService {
     final userEmail = await getAuthEmail();
     final query = userEmail != null && userEmail.isNotEmpty ? '?user_email=${Uri.encodeComponent(userEmail)}' : '';
     final uri = Uri.parse('$BASE_URL/recordings/shopping/active$query');
-    final response = await http.get(uri);
+    final headers = await _getHeaders();
+    final response = await http.get(uri, headers: headers);
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
       return data.map((j) => Recording.fromJson(j)).toList();

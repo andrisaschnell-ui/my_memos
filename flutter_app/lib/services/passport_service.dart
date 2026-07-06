@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 
 class PassportScanResult {
@@ -50,8 +51,16 @@ class PassportScanResult {
 
 class PassportService {
   final String? token;
+  String? _userEmail;
 
   PassportService({this.token});
+
+  Future<String?> _getEmail() async {
+    if (_userEmail != null) return _userEmail;
+    final prefs = await SharedPreferences.getInstance();
+    _userEmail = prefs.getString('auth_email');
+    return _userEmail;
+  }
 
   /// Send image to Railway backend for OCR extraction.
   /// Returns extracted fields or throws on failure.
@@ -61,6 +70,10 @@ class PassportService {
 
     if (token != null) {
       request.headers['Authorization'] = 'Bearer $token';
+    }
+    final email = await _getEmail();
+    if (email != null && email.isNotEmpty) {
+      request.headers['X-User-Email'] = email;
     }
 
     final mimeType = imageFile.path.toLowerCase().endsWith('.png')
@@ -95,6 +108,10 @@ class PassportService {
 
     if (token != null) {
       request.headers['Authorization'] = 'Bearer $token';
+    }
+    final email = await _getEmail();
+    if (email != null && email.isNotEmpty) {
+      request.headers['X-User-Email'] = email;
     }
 
     request.files.add(await http.MultipartFile.fromPath('file', imageFile.path));
