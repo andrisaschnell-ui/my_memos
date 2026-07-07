@@ -12,10 +12,10 @@ export const translations = {
     tasks: "Staff Tasks",
     incidents: "Incident Log",
     dailyLog: "Daily Log",
+    immigration: "Immigration List",
+    docTools: "Doc Tools",
     superAdmin: "Super Admin Settings",
     language: "PT-MZ",
-
-    // Dashboard
     todayPanel: "Today's Lodge Operations",
     checkinsToday: "Check-ins Today",
     checkoutsToday: "Check-outs Today",
@@ -33,7 +33,7 @@ export const translations = {
     noTasks: "All tasks due today are completed!",
     noIncidents: "No unresolved incidents reported.",
     guestsTotal: "guests total",
-
+    
     // Guests & Reservations
     guestsTitle: "Guest Directory & Reservations",
     newReservation: "+ New Reservation",
@@ -121,6 +121,8 @@ export const translations = {
     tasks: "Tarefas do Pessoal",
     incidents: "Registo de Incidentes",
     dailyLog: "Registo Diário",
+    immigration: "Lista de Migração",
+    docTools: "Ferramentas de Docs",
     superAdmin: "Definições de Admin",
     language: "EN",
 

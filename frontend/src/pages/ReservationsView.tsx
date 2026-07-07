@@ -18,6 +18,9 @@ interface Guest {
   has_passport_image?: boolean;
   user_email?: string;
   notes?: string;
+  arrived_from?: string;
+  visa_number?: string;
+  visa_validity?: string;
 }
 
 interface Reservation {
@@ -106,7 +109,10 @@ export const ReservationsView: React.FC = () => {
     check_in: '',
     check_out: '',
     room_or_unit: '',
-    notes: ''
+    notes: '',
+    arrived_from: '',
+    visa_number: '',
+    visa_validity: ''
   });
 
   const loadData = async () => {
@@ -173,7 +179,10 @@ export const ReservationsView: React.FC = () => {
       check_in: linkedRes ? linkedRes.check_in : '',
       check_out: linkedRes ? linkedRes.check_out : '',
       room_or_unit: linkedRes ? (linkedRes.room_or_unit || chaletList[0] || 'Chalet 1') : (chaletList[0] || 'Chalet 1'),
-      notes: g.notes || ''
+      notes: g.notes || '',
+      arrived_from: g.arrived_from || '',
+      visa_number: g.visa_number || '',
+      visa_validity: g.visa_validity || ''
     });
     setShowGuestForm(true);
   };
@@ -247,7 +256,10 @@ export const ReservationsView: React.FC = () => {
         passport_number: '', date_of_birth: '', date_of_issue: '', date_of_expiry: '',
         issuing_authority: '', place_of_birth: '', check_in: '', check_out: '',
         room_or_unit: chaletList[0] || 'Chalet 1',
-        notes: ''
+        notes: '',
+        arrived_from: '',
+        visa_number: '',
+        visa_validity: ''
       });
       setPassportFile(null);
       setRotation(0);
@@ -314,7 +326,10 @@ export const ReservationsView: React.FC = () => {
           check_in: today,
           check_out: tomorrow,
           room_or_unit: chaletList[0] || 'Chalet 1',
-          notes: ''
+          notes: '',
+          arrived_from: '',
+          visa_number: '',
+          visa_validity: ''
         });
 
         setShowGuestForm(true);
@@ -378,7 +393,10 @@ export const ReservationsView: React.FC = () => {
                 passport_number: '', date_of_birth: '', date_of_issue: '', date_of_expiry: '',
                 issuing_authority: '', place_of_birth: '', check_in: '', check_out: '',
                 room_or_unit: chaletList[0] || 'Chalet 1',
-                notes: ''
+                notes: '',
+                arrived_from: '',
+                visa_number: '',
+                visa_validity: ''
               });
               setPassportFile(null);
               setRotation(0);
@@ -923,6 +941,39 @@ export const ReservationsView: React.FC = () => {
                     type="text"
                     value={guestForm.issuing_authority}
                     onChange={(e) => setGuestForm({ ...guestForm, issuing_authority: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Arrived From</label>
+                  <input
+                    type="text"
+                    value={guestForm.arrived_from}
+                    onChange={(e) => setGuestForm({ ...guestForm, arrived_from: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Visa Nº</label>
+                  <input
+                    type="text"
+                    value={guestForm.visa_number}
+                    onChange={(e) => setGuestForm({ ...guestForm, visa_number: e.target.value })}
+                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Visa Validity</label>
+                  <input
+                    type="date"
+                    value={guestForm.visa_validity}
+                    onChange={(e) => setGuestForm({ ...guestForm, visa_validity: e.target.value })}
                     style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#0f172a', color: '#fff', border: '1px solid #334155', marginTop: '0.3rem' }}
                   />
                 </div>

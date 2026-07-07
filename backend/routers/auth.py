@@ -305,7 +305,7 @@ async def get_user_lodges(email: str, db: AsyncSession = Depends(get_db)):
         await db.refresh(new_lodge)
         lodges = [new_lodge]
         
-    return [{"id": str(l.id), "name": l.name} for l in lodges]
+    return [{"id": str(l.id), "name": l.name, "location": l.location} for l in lodges]
 
 @router.post("/lodges/sync")
 async def sync_user_lodges(req: LodgeSyncRequest, db: AsyncSession = Depends(get_db)):
@@ -331,4 +331,18 @@ async def sync_user_lodges(req: LodgeSyncRequest, db: AsyncSession = Depends(get
     
     res = await db.execute(select(Lodge).where(Lodge.user_email == clean_email).order_by(Lodge.created_at.asc()))
     updated = res.scalars().all()
-    return [{"id": str(l.id), "name": l.name} for l in updated]
+    return [{"id": str(l.id), "name": l.name, "location": l.location} for l in updated]
+
+@router.put("/lodges/{lodge_id}/location")
+async def update_lodge_location(
+    lodge_id: uuid.UUID,
+    data: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(Lodge).where(Lodge.id == lodge_id))
+    lodge = res.scalar_one_or_none()
+    if not lodge:
+        raise HTTPException(status_code=404, detail="Lodge not found")
+    lodge.location = data.get("location", "")
+    await db.commit()
+    return {"id": str(lodge.id), "location": lodge.location}

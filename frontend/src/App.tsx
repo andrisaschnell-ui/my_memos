@@ -11,6 +11,8 @@ import { ReservationsView } from './pages/ReservationsView'
 import { TaskBoardView } from './pages/TaskBoardView'
 import { IncidentLogView } from './pages/IncidentLogView'
 import { DailyLogView } from './pages/DailyLogView'
+import { ImmigrationView } from './pages/ImmigrationView'
+import { DocumentToolsView } from './pages/DocumentToolsView'
 import { useTranslation } from './i18n/translations'
 import { api } from './api/client'
 
@@ -63,6 +65,8 @@ function Navigation({
         <Link to="/tasks" style={navStyle('/tasks')}>📋 {t.tasks}</Link>
         <Link to="/incidents" style={navStyle('/incidents')}>🚨 {t.incidents}</Link>
         <Link to="/daily-log" style={navStyle('/daily-log')}>📔 {t.dailyLog}</Link>
+        <Link to="/immigration" style={navStyle('/immigration')}>🇲🇿 {t.immigration}</Link>
+        <Link to="/document-tools" style={navStyle('/document-tools')}>📄 {t.docTools}</Link>
         <Link to="/" style={navStyle('/')}>🎙️ {t.memos}</Link>
         <Link to="/shopping" style={navStyle('/shopping')}>🛒 {t.shopping}</Link>
         {isAdmin && (
@@ -166,6 +170,8 @@ function MainRoutes({
           <Route path="/tasks" element={<TaskBoardView />} />
           <Route path="/incidents" element={<IncidentLogView />} />
           <Route path="/daily-log" element={<DailyLogView />} />
+          <Route path="/immigration" element={<ImmigrationView />} />
+          <Route path="/document-tools" element={<DocumentToolsView />} />
           <Route path="/" element={<Dashboard />} />
           <Route path="/shopping" element={<ShoppingView />} />
           <Route path="/calendar" element={<CalendarView />} />

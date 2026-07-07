@@ -52,6 +52,7 @@ class Lodge(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     name       = Column(String(255), nullable=False)
     user_email = Column(String(255), nullable=False, index=True)
+    location   = Column(String(255), nullable=True)
 
 
 class AppRelease(Base):
@@ -84,6 +85,9 @@ class Guest(Base):
     user_email        = Column(String(255), nullable=True, index=True) # owner email
     lodge_id          = Column(UUID(as_uuid=True), ForeignKey("lodges.id", ondelete="SET NULL"), nullable=True)
     notes             = Column(Text, nullable=True)
+    arrived_from      = Column(String(255), nullable=True)
+    visa_number       = Column(String(100), nullable=True)
+    visa_validity     = Column(Date, nullable=True)
 
     reservations = relationship("Reservation", back_populates="guest", cascade="all, delete-orphan")
 
