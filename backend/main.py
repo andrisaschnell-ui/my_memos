@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, Base
-from routers import recordings, clients, auth, updates, lodge, passport
+from routers import recordings, clients, auth, updates, lodge, passport, document
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +15,11 @@ async def lifespan(app: FastAPI):
     try:
         async def init_db():
             async with engine.begin() as conn:
+                try:
+                    from sqlalchemy import text
+                    await conn.execute(text("SET lock_timeout = 3000"))
+                except Exception:
+                    pass
                 await conn.run_sync(Base.metadata.create_all)
                 try:
                     from sqlalchemy import text
@@ -56,6 +61,7 @@ app.include_router(auth.router)
 app.include_router(updates.router)
 app.include_router(lodge.router)
 app.include_router(passport.router)
+app.include_router(document.router)
 
 @app.get("/")
 async def root():

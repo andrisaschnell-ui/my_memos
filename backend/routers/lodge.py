@@ -190,6 +190,7 @@ async def create_guest(
     guest_data["date_of_birth"] = parse_date(guest_data.get("date_of_birth"))
     guest_data["date_of_issue"] = parse_date(guest_data.get("date_of_issue"))
     guest_data["date_of_expiry"] = parse_date(guest_data.get("date_of_expiry"))
+    guest_data["visa_validity"] = parse_date(guest_data.get("visa_validity"))
     
     # Always stamp the owner email from the authenticated header
     if user_email:
@@ -246,6 +247,7 @@ async def update_guest(
     guest_data["date_of_birth"] = parse_date(guest_data.get("date_of_birth"))
     guest_data["date_of_issue"] = parse_date(guest_data.get("date_of_issue"))
     guest_data["date_of_expiry"] = parse_date(guest_data.get("date_of_expiry"))
+    guest_data["visa_validity"] = parse_date(guest_data.get("visa_validity"))
     
     # Preserve owner email
     if user_email:
@@ -357,6 +359,209 @@ async def list_reservations(
             "notes": r.notes
         })
     return out
+
+@router.get("/immigration-report")
+async def get_immigration_report(
+    start_date: date,
+    end_date: date,
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
+):
+    query = select(Reservation).join(Guest)
+    if user_email:
+        query = query.where(Guest.user_email == user_email)
+    if lodge_id:
+        query = query.where(Guest.lodge_id == lodge_id)
+        
+    query = query.where(Reservation.check_in >= start_date, Reservation.check_in <= end_date)
+    query = query.order_by(Reservation.check_in.asc())
+    
+    res = await db.execute(query)
+    reservations = res.scalars().all()
+    
+    out = []
+    for idx, r in enumerate(reservations):
+        gobj = None
+        if r.guest_id:
+            gres = await db.execute(select(Guest).where(Guest.id == r.guest_id))
+            gobj = gres.scalar_one_or_none()
+            
+        if gobj:
+            out.append({
+                "no": idx + 1,
+                "guest_id": str(gobj.id),
+                "reservation_id": str(r.id),
+                "full_name": gobj.full_name,
+                "nationality": gobj.nationality,
+                "passport_number": gobj.passport_number,
+                "date_of_issue": gobj.date_of_issue.isoformat() if gobj.date_of_issue else None,
+                "arrived_from": gobj.arrived_from,
+                "visa_number": gobj.visa_number,
+                "visa_validity": gobj.visa_validity.isoformat() if gobj.visa_validity else None,
+                "check_in": r.check_in.isoformat() if r.check_in else None,
+                "check_out": r.check_out.isoformat() if r.check_out else None,
+            })
+    return out
+
+@router.get("/immigration-report/docx")
+async def get_immigration_report_docx(
+    start_date: date,
+    end_date: date,
+    lodge_name: Optional[str] = None,
+    lodge_location: Optional[str] = None,
+    language: Optional[str] = "PT",
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
+):
+    """Generate and stream a DOCX Boletim de Alojamento / Immigration List."""
+    from docx import Document
+    from docx.shared import Pt, Inches, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+    from fastapi.responses import StreamingResponse
+    import io
+
+    # Fetch reservations
+    query = select(Reservation).join(Guest)
+    if user_email:
+        query = query.where(Guest.user_email == user_email)
+    if lodge_id:
+        query = query.where(Guest.lodge_id == lodge_id)
+    query = query.where(Reservation.check_in >= start_date, Reservation.check_in <= end_date)
+    query = query.order_by(Reservation.check_in.asc())
+    res = await db.execute(query)
+    reservations = res.scalars().all()
+
+    rows = []
+    for idx, r in enumerate(reservations):
+        gobj = None
+        if r.guest_id:
+            gres = await db.execute(select(Guest).where(Guest.id == r.guest_id))
+            gobj = gres.scalar_one_or_none()
+        if gobj:
+            rows.append({
+                "no": idx + 1,
+                "full_name": gobj.full_name or "",
+                "nationality": gobj.nationality or "",
+                "passport_number": gobj.passport_number or "",
+                "date_of_issue": gobj.date_of_issue.isoformat() if gobj.date_of_issue else "",
+                "arrived_from": gobj.arrived_from or "",
+                "visa_number": gobj.visa_number or "",
+                "visa_validity": gobj.visa_validity.isoformat() if gobj.visa_validity else "",
+                "check_in": r.check_in.isoformat() if r.check_in else "",
+                "check_out": r.check_out.isoformat() if r.check_out else "",
+            })
+
+    is_pt = (language or "PT").upper() == "PT"
+    today_str = date.today().strftime("%d/%m/%Y")
+    MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+    MONTHS_EN = ["January","February","March","April","May","June","July","August","September","October","November","December"]
+    month_name = MONTHS_PT[start_date.month - 1] if is_pt else MONTHS_EN[start_date.month - 1]
+
+    doc = Document()
+    section = doc.sections[0]
+    section.page_width = Inches(11.69)
+    section.page_height = Inches(8.27)
+    section.left_margin = Cm(1.5)
+    section.right_margin = Cm(1.5)
+    section.top_margin = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+
+    def add_centered(text, bold=False, size=11):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(text)
+        run.bold = bold
+        run.font.size = Pt(size)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.space_before = Pt(0)
+        return p
+
+    if is_pt:
+        add_centered("REPÚBLICA DE MOÇAMBIQUE", bold=True, size=11)
+        add_centered("MINISTÉRIO DO INTERIOR", bold=True, size=10)
+        add_centered("SERVIÇO NACIONAL DE MIGRAÇÃO", bold=True, size=10)
+        add_centered("DIRECÇÃO PROVINCIAL DE MIGRAÇÃO - INHAMBANE", size=10)
+        add_centered("DEPARTAMENTO DE OPERAÇÕES MIGRATÓRIAS", size=10)
+        add_centered("REPARTIÇÃO DO MOVIMENTO MIGRATÓRIO", size=10)
+        add_centered("POSTO DE TRAVESSIA AÉREO DE VILANKULO", size=10)
+        p = add_centered("BOLETIM DE ALOJAMENTO - ARTIGO 40 DA LEI N°23/2022 DE 29 DE DEZEMBRO", bold=True, size=9)
+    else:
+        add_centered("REPUBLIC OF MOZAMBIQUE", bold=True, size=11)
+        add_centered("MINISTRY OF INTERIOR", bold=True, size=10)
+        add_centered("NATIONAL MIGRATION SERVICE", bold=True, size=10)
+        add_centered("PROVINCIAL MIGRATION DIRECTION - INHAMBANE", size=10)
+        add_centered("MIGRATION OPERATIONS DEPARTMENT", size=10)
+        add_centered("MIGRATORY MOVEMENT SECTION", size=10)
+        add_centered("VILANKULO AIR PORT OF ENTRY", size=10)
+        p = add_centered("ACCOMMODATION BULLETIN - ARTICLE 40 OF LAW N°23/2022 OF DECEMBER 29", bold=True, size=9)
+    p.paragraph_format.space_after = Pt(4)
+
+    # Meta info table
+    meta = doc.add_table(rows=2, cols=2)
+    meta.style = "Table Grid"
+    meta.cell(0, 0).text = f"{'LOCALIZAÇÃO' if is_pt else 'LOCATION'}: {lodge_location or ''}"
+    meta.cell(0, 1).text = f"{'ESTABELECIMENTO' if is_pt else 'ESTABLISHMENT'}: {lodge_name or ''}"
+    meta.cell(1, 0).text = f"{'MÊS' if is_pt else 'MONTH'}: {month_name}"
+    meta.cell(1, 1).text = f"{'DATA' if is_pt else 'DATE'}: {today_str}"
+    for row in meta.rows:
+        for cell in row.cells:
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    run.font.size = Pt(9)
+    doc.add_paragraph()
+
+    # Headers
+    if is_pt:
+        headers = ["N/O","NOME COMPLETO","NACIONALIDADE","Nº PASSAPORTE","DATA EMISSÃO","PROVENIÊNCIA","VISTO Nº","VALIDADE","ENTRADA","SAÍDA"]
+    else:
+        headers = ["N/O","FULL NAME","NATIONALITY","PASSPORT Nº","DATE OF ISSUE","ARRIVED FROM","VISA Nº","VALIDITY","ENTRY","EXIT"]
+
+    col_widths = [Cm(1.0), Cm(4.5), Cm(3.0), Cm(2.5), Cm(2.2), Cm(3.0), Cm(2.2), Cm(2.2), Cm(2.0), Cm(2.0)]
+
+    table = doc.add_table(rows=1, cols=10)
+    table.style = "Table Grid"
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    hdr_row = table.rows[0].cells
+    for i, (cell, hdr) in enumerate(zip(hdr_row, headers)):
+        cell.width = col_widths[i]
+        cell.text = hdr
+        for para in cell.paragraphs:
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for run in para.runs:
+                run.bold = True
+                run.font.size = Pt(8)
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+
+    for row_data in rows:
+        values = [
+            str(row_data["no"]), row_data["full_name"], row_data["nationality"],
+            row_data["passport_number"], row_data["date_of_issue"], row_data["arrived_from"],
+            row_data["visa_number"], row_data["visa_validity"], row_data["check_in"], row_data["check_out"],
+        ]
+        row_cells = table.add_row().cells
+        for i, (cell, val) in enumerate(zip(row_cells, values)):
+            cell.width = col_widths[i]
+            cell.text = val
+            for para in cell.paragraphs:
+                if i == 0:
+                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in para.runs:
+                    run.font.size = Pt(8)
+            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+
+    stream = io.BytesIO()
+    doc.save(stream)
+    stream.seek(0)
+    fname = f"boletim_{(lodge_name or 'lodge').replace(' ','_')}_{month_name.lower()}_{start_date.year}.docx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
 
 @router.post("/reservations")
 async def create_reservation(data: ReservationCreate, db: AsyncSession = Depends(get_db)):

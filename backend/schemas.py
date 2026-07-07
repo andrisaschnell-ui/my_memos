@@ -56,6 +56,9 @@ class GuestCreate(BaseModel):
     check_out: Optional[str] = None
     room_or_unit: Optional[str] = None
     notes: Optional[str] = None
+    arrived_from: Optional[str] = None
+    visa_number: Optional[str] = None
+    visa_validity: Optional[str] = None
 
 class GuestOut(BaseModel):
     id: uuid.UUID
@@ -74,6 +77,9 @@ class GuestOut(BaseModel):
     user_email: Optional[str] = None
     notes: Optional[str] = None
     has_passport_image: bool = False
+    arrived_from: Optional[str] = None
+    visa_number: Optional[str] = None
+    visa_validity: Optional[date] = None
 
     model_config = {"from_attributes": True}
 
