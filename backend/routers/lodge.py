@@ -417,13 +417,15 @@ async def get_immigration_report_docx(
 ):
     """Generate and stream a DOCX Boletim de Alojamento / Immigration List."""
     from docx import Document
-    from docx.shared import Pt, Inches, Cm
+    from docx.shared import Pt, Inches, Cm, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
     from fastapi.responses import StreamingResponse
     import io
 
-    # Fetch reservations
+    # ── Fetch reservations ────────────────────────────────────────────────────
     query = select(Reservation).join(Guest)
     if user_email:
         query = query.where(Guest.user_email == user_email)
@@ -441,118 +443,189 @@ async def get_immigration_report_docx(
             gres = await db.execute(select(Guest).where(Guest.id == r.guest_id))
             gobj = gres.scalar_one_or_none()
         if gobj:
+            def fmt_date(d):
+                if not d:
+                    return ""
+                MONTHS_PT_SHORT = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"]
+                MONTHS_EN_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+                mo = MONTHS_PT_SHORT[d.month - 1] if (language or "PT").upper() == "PT" else MONTHS_EN_SHORT[d.month - 1]
+                return f"{d.day:02d}-{mo}-{str(d.year)[2:]}"
             rows.append({
-                "no": idx + 1,
-                "full_name": gobj.full_name or "",
-                "nationality": gobj.nationality or "",
+                "no": f"{idx + 1:02d}",
+                "full_name": (gobj.full_name or "").upper(),
+                "nationality": (gobj.nationality or "").upper(),
                 "passport_number": gobj.passport_number or "",
-                "date_of_issue": gobj.date_of_issue.isoformat() if gobj.date_of_issue else "",
-                "arrived_from": gobj.arrived_from or "",
-                "visa_number": gobj.visa_number or "",
-                "visa_validity": gobj.visa_validity.isoformat() if gobj.visa_validity else "",
-                "check_in": r.check_in.isoformat() if r.check_in else "",
-                "check_out": r.check_out.isoformat() if r.check_out else "",
+                "date_of_issue": fmt_date(gobj.date_of_issue),
+                "arrived_from": (gobj.arrived_from or "").upper(),
+                "visa_number": gobj.visa_number or "N/A",
+                "visa_validity": fmt_date(gobj.visa_validity) if gobj.visa_validity else "N/A",
+                "check_in": fmt_date(r.check_in),
+                "check_out": fmt_date(r.check_out),
             })
 
     is_pt = (language or "PT").upper() == "PT"
-    today_str = date.today().strftime("%d/%m/%Y")
+    today = date.today()
+    today_str = f"{today.day:02d}/ {today.month:02d}/{today.year}"
     MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     MONTHS_EN = ["January","February","March","April","May","June","July","August","September","October","November","December"]
     month_name = MONTHS_PT[start_date.month - 1] if is_pt else MONTHS_EN[start_date.month - 1]
 
+    # ── Create Document ───────────────────────────────────────────────────────
     doc = Document()
-    section = doc.sections[0]
-    section.page_width = Inches(11.69)
-    section.page_height = Inches(8.27)
-    section.left_margin = Cm(1.5)
-    section.right_margin = Cm(1.5)
-    section.top_margin = Cm(1.5)
-    section.bottom_margin = Cm(1.5)
 
-    def add_centered(text, bold=False, size=11):
+    # Page setup: 11" x 8.5" landscape (US Letter landscape — same as example)
+    section = doc.sections[0]
+    section.page_width  = Inches(11.0)
+    section.page_height = Inches(8.5)
+    # Narrow margins matching the example (1.27 cm = 0.5")
+    section.left_margin   = Cm(1.27)
+    section.right_margin  = Cm(1.27)
+    section.top_margin    = Cm(1.27)
+    section.bottom_margin = Cm(1.27)
+
+    # ── Helper: add centred paragraph ─────────────────────────────────────────
+    def add_hdr(text: str, bold: bool = False, size: float = 12):
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
         run = p.add_run(text)
         run.bold = bold
         run.font.size = Pt(size)
-        p.paragraph_format.space_after = Pt(0)
-        p.paragraph_format.space_before = Pt(0)
         return p
 
-    if is_pt:
-        add_centered("REPÚBLICA DE MOÇAMBIQUE", bold=True, size=11)
-        add_centered("MINISTÉRIO DO INTERIOR", bold=True, size=10)
-        add_centered("SERVIÇO NACIONAL DE MIGRAÇÃO", bold=True, size=10)
-        add_centered("DIRECÇÃO PROVINCIAL DE MIGRAÇÃO - INHAMBANE", size=10)
-        add_centered("DEPARTAMENTO DE OPERAÇÕES MIGRATÓRIAS", size=10)
-        add_centered("REPARTIÇÃO DO MOVIMENTO MIGRATÓRIO", size=10)
-        add_centered("POSTO DE TRAVESSIA AÉREO DE VILANKULO", size=10)
-        p = add_centered("BOLETIM DE ALOJAMENTO - ARTIGO 40 DA LEI N°23/2022 DE 29 DE DEZEMBRO", bold=True, size=9)
-    else:
-        add_centered("REPUBLIC OF MOZAMBIQUE", bold=True, size=11)
-        add_centered("MINISTRY OF INTERIOR", bold=True, size=10)
-        add_centered("NATIONAL MIGRATION SERVICE", bold=True, size=10)
-        add_centered("PROVINCIAL MIGRATION DIRECTION - INHAMBANE", size=10)
-        add_centered("MIGRATION OPERATIONS DEPARTMENT", size=10)
-        add_centered("MIGRATORY MOVEMENT SECTION", size=10)
-        add_centered("VILANKULO AIR PORT OF ENTRY", size=10)
-        p = add_centered("ACCOMMODATION BULLETIN - ARTICLE 40 OF LAW N°23/2022 OF DECEMBER 29", bold=True, size=9)
-    p.paragraph_format.space_after = Pt(4)
+    def add_left(text: str, bold: bool = True, size: float = 10):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+        run = p.add_run(text)
+        run.bold = bold
+        run.font.size = Pt(size)
+        return p
 
-    # Meta info table
-    meta = doc.add_table(rows=2, cols=2)
-    meta.style = "Table Grid"
-    meta.cell(0, 0).text = f"{'LOCALIZAÇÃO' if is_pt else 'LOCATION'}: {lodge_location or ''}"
-    meta.cell(0, 1).text = f"{'ESTABELECIMENTO' if is_pt else 'ESTABLISHMENT'}: {lodge_name or ''}"
-    meta.cell(1, 0).text = f"{'MÊS' if is_pt else 'MONTH'}: {month_name}"
-    meta.cell(1, 1).text = f"{'DATA' if is_pt else 'DATE'}: {today_str}"
-    for row in meta.rows:
-        for cell in row.cells:
-            for para in cell.paragraphs:
-                for run in para.runs:
-                    run.font.size = Pt(9)
-    doc.add_paragraph()
+    # ── Official header — exact text from the example ─────────────────────────
+    add_hdr("REPÚBLICA DE MOÇAMBIQUE",              bold=False, size=12)
+    add_hdr(".........*.........",                   bold=False, size=12)
+    add_hdr("MINISTÉRIO DO INTERIOR",               bold=False, size=12)
+    add_hdr("SERVIÇO NACIONAL DE MIGRAÇÃO",         bold=False, size=12)
+    add_hdr("DIRECÇÃO PROVINCIAL DE MIGRACAO-INHAMBANE", bold=False, size=12)
+    add_hdr("DEPARTAMENTO DE OPERAÇÕES MIGRATÓRIAS",bold=False, size=12)
+    add_hdr("REPARTIҪÃO DO MOVIMENTO MIGRATÓRIO",   bold=False, size=12)
+    add_hdr("POSTO DE TRAVESSIA AÉREO DE VILANKULO",bold=True,  size=12)
+    # Spacer line (like para 9 in the example)
+    spacer = doc.add_paragraph()
+    spacer.paragraph_format.space_before = Pt(0)
+    spacer.paragraph_format.space_after  = Pt(0)
+    add_hdr("BOLETIM DE ALOJAMENTO, PLASMADO NO ARTIGO 40 DA LEI N°23/2022 DE 29 DE DEZEMBRO",
+            bold=True, size=12)
 
-    # Headers
-    if is_pt:
-        headers = ["N/O","NOME COMPLETO","NACIONALIDADE","Nº PASSAPORTE","DATA EMISSÃO","PROVENIÊNCIA","VISTO Nº","VALIDADE","ENTRADA","SAÍDA"]
-    else:
-        headers = ["N/O","FULL NAME","NATIONALITY","PASSPORT Nº","DATE OF ISSUE","ARRIVED FROM","VISA Nº","VALIDITY","ENTRY","EXIT"]
+    # ── Meta section — plain left paragraphs (matching the example) ───────────
+    loc_label   = "LOCALIZAÇÃO"   if is_pt else "LOCATION"
+    lodge_label = "Nome do estabelicimento turístico"  # kept in Portuguese as per example
+    month_label = "Mês" if is_pt else "Month"
+    date_label  = "Data" if is_pt else "Date"
 
-    col_widths = [Cm(1.0), Cm(4.5), Cm(3.0), Cm(2.5), Cm(2.2), Cm(3.0), Cm(2.2), Cm(2.2), Cm(2.0), Cm(2.0)]
+    add_left(f"{loc_label}: {lodge_location or ''}", bold=True, size=10)
+    add_left(f"{lodge_label}ː {lodge_name or ''}", bold=True, size=10)
+
+    # Month / Date / Page on one line
+    page_label = "Página" if is_pt else "Page"
+    p_meta = doc.add_paragraph()
+    p_meta.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_meta.paragraph_format.space_before = Pt(0)
+    p_meta.paragraph_format.space_after  = Pt(4)
+    def add_meta_run(text, bold=True, size=10):
+        run = p_meta.add_run(text)
+        run.bold = bold
+        run.font.size = Pt(size)
+    add_meta_run(f"{month_label}:    ")
+    add_meta_run(month_name)
+    add_meta_run(f"            {date_label}:    {today_str}            {page_label}: 01")
+
+    # ── Data table — exact column widths from the example ────────────────────
+    # Bilingual headers: "PT / EN" format, matching official document
+    headers = [
+        "N/O",
+        "NOME COMPLETO/\nFULL NAME",
+        "NACIONALIDADE/\nNACIONALITY",
+        "Nº PASSAPORTE/\nPASSPORT Nº",
+        "DATA DE EMISSÃO/\nDATE OF ISSUE",
+        "PROVINIÊNCIA/\nARRIVED FROM",
+        "VISTO Nº/\nVISA Nº",
+        "VALIDADE/\nVALIDITY",
+        "ENTRADA /\nENTRY",
+        "SAIDA\nEXIT",
+    ]
+
+    # Column widths from example file: [1.41, 6.49, 3.03, 2.39, 2.21, 2.40, 2.34, 1.66, 1.86, 2.14]
+    col_widths = [
+        Cm(1.41), Cm(6.49), Cm(3.03), Cm(2.39),
+        Cm(2.21), Cm(2.40), Cm(2.34), Cm(1.66),
+        Cm(1.86), Cm(2.14),
+    ]
+
+    def set_cell_border(cell):
+        """Add thin borders to a table cell."""
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        tcBorders = OxmlElement('w:tcBorders')
+        for border_name in ('top', 'left', 'bottom', 'right'):
+            border = OxmlElement(f'w:{border_name}')
+            border.set(qn('w:val'), 'single')
+            border.set(qn('w:sz'), '4')
+            border.set(qn('w:space'), '0')
+            border.set(qn('w:color'), '000000')
+            tcBorders.append(border)
+        tcPr.append(tcBorders)
 
     table = doc.add_table(rows=1, cols=10)
     table.style = "Table Grid"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-    hdr_row = table.rows[0].cells
-    for i, (cell, hdr) in enumerate(zip(hdr_row, headers)):
+    # Header row
+    hdr_cells = table.rows[0].cells
+    for i, (cell, hdr_text) in enumerate(zip(hdr_cells, headers)):
         cell.width = col_widths[i]
-        cell.text = hdr
-        for para in cell.paragraphs:
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in para.runs:
-                run.bold = True
-                run.font.size = Pt(8)
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        p = cell.paragraphs[0]
+        p.clear()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+        run = p.add_run(hdr_text)
+        run.bold = True
+        run.font.size = Pt(8)
+        set_cell_border(cell)
 
+    # Data rows
     for row_data in rows:
         values = [
-            str(row_data["no"]), row_data["full_name"], row_data["nationality"],
-            row_data["passport_number"], row_data["date_of_issue"], row_data["arrived_from"],
-            row_data["visa_number"], row_data["visa_validity"], row_data["check_in"], row_data["check_out"],
+            row_data["no"],
+            row_data["full_name"],
+            row_data["nationality"],
+            row_data["passport_number"],
+            row_data["date_of_issue"],
+            row_data["arrived_from"],
+            row_data["visa_number"],
+            row_data["visa_validity"],
+            row_data["check_in"],
+            row_data["check_out"],
         ]
         row_cells = table.add_row().cells
         for i, (cell, val) in enumerate(zip(row_cells, values)):
             cell.width = col_widths[i]
-            cell.text = val
-            for para in cell.paragraphs:
-                if i == 0:
-                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                for run in para.runs:
-                    run.font.size = Pt(8)
             cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            p = cell.paragraphs[0]
+            p.clear()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER if i == 0 else WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(0)
+            run = p.add_run(val)
+            run.font.size = Pt(8)
+            set_cell_border(cell)
 
+    # ── Stream document ───────────────────────────────────────────────────────
     stream = io.BytesIO()
     doc.save(stream)
     stream.seek(0)
@@ -560,6 +633,174 @@ async def get_immigration_report_docx(
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+@router.get("/immigration-report/excel")
+async def get_immigration_report_excel(
+    start_date: date,
+    end_date: date,
+    lodge_name: Optional[str] = None,
+    lodge_location: Optional[str] = None,
+    language: Optional[str] = "PT",
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
+):
+    """Generate and stream an Excel (.xlsx) Boletim de Alojamento / Immigration List."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, Border, Side
+    from fastapi.responses import StreamingResponse
+    import io
+
+    # ── Fetch reservations ────────────────────────────────────────────────────
+    query = select(Reservation).join(Guest)
+    if user_email:
+        query = query.where(Guest.user_email == user_email)
+    if lodge_id:
+        query = query.where(Guest.lodge_id == lodge_id)
+    query = query.where(Reservation.check_in >= start_date, Reservation.check_in <= end_date)
+    query = query.order_by(Reservation.check_in.asc())
+    res = await db.execute(query)
+    reservations = res.scalars().all()
+
+    rows = []
+    for idx, r in enumerate(reservations):
+        gobj = None
+        if r.guest_id:
+            gres = await db.execute(select(Guest).where(Guest.id == r.guest_id))
+            gobj = gres.scalar_one_or_none()
+        if gobj:
+            def fmt_date(d):
+                if not d:
+                    return ""
+                MONTHS_PT_SHORT = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"]
+                MONTHS_EN_SHORT = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+                mo = MONTHS_PT_SHORT[d.month - 1] if (language or "PT").upper() == "PT" else MONTHS_EN_SHORT[d.month - 1]
+                return f"{d.day:02d}-{mo}-{str(d.year)[2:]}"
+            rows.append([
+                f"{idx + 1:02d}",
+                (gobj.full_name or "").upper(),
+                (gobj.nationality or "").upper(),
+                gobj.passport_number or "",
+                fmt_date(gobj.date_of_issue),
+                (gobj.arrived_from or "").upper(),
+                gobj.visa_number or "N/A",
+                fmt_date(gobj.visa_validity) if gobj.visa_validity else "N/A",
+                fmt_date(r.check_in),
+                fmt_date(r.check_out),
+            ])
+
+    is_pt = (language or "PT").upper() == "PT"
+    today = date.today()
+    today_str = f"{today.day:02d}/{today.month:02d}/{today.year}"
+    MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+    MONTHS_EN = ["January","February","March","April","May","June","July","August","September","October","November","December"]
+    month_name = MONTHS_PT[start_date.month - 1] if is_pt else MONTHS_EN[start_date.month - 1]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Immigration List"
+
+    # ── Official header ─────────────────────────────────────────
+    def add_row(ws, data, row_idx, bold=False, size=11, align='center'):
+        for col_idx, value in enumerate(data, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.font = Font(bold=bold, size=size)
+            if align == 'center':
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            elif align == 'left':
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+
+    current_row = 1
+    # Merge cells for header
+    for i in range(1, 9):
+        ws.merge_cells(start_row=current_row + i - 1, start_column=1, end_row=current_row + i - 1, end_column=10)
+    
+    add_row(ws, ["REPÚBLICA DE MOÇAMBIQUE"], current_row, bold=False, size=12)
+    current_row += 1
+    add_row(ws, [".........*........."], current_row, bold=False, size=12)
+    current_row += 1
+    add_row(ws, ["MINISTÉRIO DO INTERIOR"], current_row, bold=False, size=12)
+    current_row += 1
+    add_row(ws, ["SERVIÇO NACIONAL DE MIGRAÇÃO"], current_row, bold=False, size=12)
+    current_row += 1
+    add_row(ws, ["DIRECÇÃO PROVINCIAL DE MIGRACAO-INHAMBANE"], current_row, bold=False, size=12)
+    current_row += 1
+    add_row(ws, ["DEPARTAMENTO DE OPERAÇÕES MIGRATÓRIAS"], current_row, bold=False, size=12)
+    current_row += 1
+    add_row(ws, ["REPARTIҪÃO DO MOVIMENTO MIGRATÓRIO"], current_row, bold=False, size=12)
+    current_row += 1
+    add_row(ws, ["POSTO DE TRAVESSIA AÉREO DE VILANKULO"], current_row, bold=True, size=12)
+    current_row += 1
+    
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
+    current_row += 1
+
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
+    add_row(ws, ["BOLETIM DE ALOJAMENTO, PLASMADO NO ARTIGO 40 DA LEI N°23/2022 DE 29 DE DEZEMBRO"], current_row, bold=True, size=12)
+    current_row += 2
+
+    # Meta
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
+    add_row(ws, [f"{'LOCALIZAÇÃO' if is_pt else 'LOCATION'}: {lodge_location or ''}"], current_row, bold=True, size=10, align='left')
+    current_row += 1
+    
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
+    add_row(ws, [f"Nome do estabelicimento turísticoː {lodge_name or ''}"], current_row, bold=True, size=10, align='left')
+    current_row += 1
+
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
+    add_row(ws, [f"{'Mês' if is_pt else 'Month'}: {month_name}      {'Data' if is_pt else 'Date'}: {today_str}      {'Página' if is_pt else 'Page'}: 01"], current_row, bold=True, size=10, align='left')
+    current_row += 2
+
+    # Headers
+    headers = [
+        "N/O",
+        "NOME COMPLETO/\nFULL NAME",
+        "NACIONALIDADE/\nNACIONALITY",
+        "Nº PASSAPORTE/\nPASSPORT Nº",
+        "DATA DE EMISSÃO/\nDATE OF ISSUE",
+        "PROVINIÊNCIA/\nARRIVED FROM",
+        "VISTO Nº/\nVISA Nº",
+        "VALIDADE/\nVALIDITY",
+        "ENTRADA /\nENTRY",
+        "SAIDA\nEXIT",
+    ]
+    
+    # Add headers
+    for col_idx, hdr in enumerate(headers, start=1):
+        cell = ws.cell(row=current_row, column=col_idx, value=hdr)
+        cell.font = Font(bold=True, size=8)
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        thin = Side(border_style="thin", color="000000")
+        cell.border = Border(top=thin, left=thin, right=thin, bottom=thin)
+
+    # Set column widths approximately
+    col_widths = [5, 25, 15, 12, 12, 12, 12, 10, 10, 10]
+    for i, w in enumerate(col_widths, start=1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    current_row += 1
+
+    # Data rows
+    for row_data in rows:
+        for col_idx, val in enumerate(row_data, start=1):
+            cell = ws.cell(row=current_row, column=col_idx, value=val)
+            cell.font = Font(size=8)
+            cell.alignment = Alignment(horizontal='center' if col_idx == 1 else 'left', vertical='center')
+            thin = Side(border_style="thin", color="000000")
+            cell.border = Border(top=thin, left=thin, right=thin, bottom=thin)
+        current_row += 1
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    
+    fname = f"boletim_{(lodge_name or 'lodge').replace(' ','_')}_{month_name.lower()}_{start_date.year}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'}
     )
 

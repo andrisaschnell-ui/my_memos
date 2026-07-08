@@ -32,6 +32,7 @@ export function ImmigrationView() {
   const [loading, setLoading] = useState(false)
   const [language, setLanguage] = useState<'PT' | 'EN'>('PT')
   const [downloadingDocx, setDownloadingDocx] = useState(false)
+  const [downloadingExcel, setDownloadingExcel] = useState(false)
   
   const activeLodgeId = localStorage.getItem('activeLodgeId') || ''
   const activeLodgeName = localStorage.getItem('activeLodgeName') || 'Default Lodge'
@@ -156,6 +157,38 @@ export function ImmigrationView() {
     }
   }
 
+  const handleDownloadExcel = async () => {
+    if (!startDate || !endDate) return
+    setDownloadingExcel(true)
+    try {
+      const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+        language,
+        lodge_name: activeLodgeName,
+        lodge_location: lodgeLocation || '',
+      })
+      const resp = await api.get(`/lodge/immigration-report/excel?${params.toString()}`, {
+        responseType: 'blob',
+      })
+      const url = window.URL.createObjectURL(new Blob([resp.data]))
+      const a = document.createElement('a')
+      a.href = url
+      const cd = resp.headers['content-disposition'] || ''
+      const match = cd.match(/filename="?([^"]+)"?/)
+      a.download = match ? match[1] : `boletim_${activeLodgeName.replace(/ /g,'_')}_${startDate}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Error downloading Excel:', err)
+      alert(language === 'EN' ? 'Failed to download Excel document.' : 'Falha ao descarregar o documento Excel.')
+    } finally {
+      setDownloadingExcel(false)
+    }
+  }
+
   // Translation helpers
   const labels = {
     PT: {
@@ -176,6 +209,7 @@ export function ImmigrationView() {
       endDate: "Data de Fim",
       printBtn: "Imprimir Lista 🖨️",
       docxBtn: "Descarregar Word 📄",
+      excelBtn: "Descarregar Excel 📊",
       saveLocBtn: "Gravar",
       loading: "A carregar dados...",
       noData: "Nenhum hóspede encontrado para o período selecionado.",
@@ -209,6 +243,7 @@ export function ImmigrationView() {
       endDate: "End Date",
       printBtn: "Print List 🖨️",
       docxBtn: "Download Word 📄",
+      excelBtn: "Download Excel 📊",
       saveLocBtn: "Save",
       loading: "Loading data...",
       noData: "No guests found for the selected period.",
@@ -319,8 +354,25 @@ export function ImmigrationView() {
               {downloadingDocx ? '⏳ ...' : (t as any).docxBtn}
             </button>
             <button
+              onClick={handleDownloadExcel}
+              disabled={downloadingExcel || rows.length === 0}
+              style={{
+                padding: '0.6rem 1.4rem',
+                background: downloadingExcel ? '#475569' : 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '24px',
+                fontWeight: 800,
+                cursor: downloadingExcel ? 'wait' : 'pointer',
+                opacity: rows.length === 0 ? 0.5 : 1,
+                transition: 'all 0.2s'
+              }}
+            >
+              {downloadingExcel ? '⏳ ...' : (t as any).excelBtn}
+            </button>
+            <button
               onClick={handlePrint}
-              style={{ padding: '0.6rem 1.4rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '24px', fontWeight: 800, cursor: 'pointer' }}
+              style={{ padding: '0.6rem 1.4rem', background: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '24px', fontWeight: 800, cursor: 'pointer' }}
             >
               {t.printBtn}
             </button>
