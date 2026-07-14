@@ -36,8 +36,31 @@ class DateUpdate(BaseModel):
 class ClientUpdate(BaseModel):
     client_id: Optional[uuid.UUID] = None
 
+class TextUpdate(BaseModel):
+    summary: str
+    transcript: str
+
 
 # Lodge Schemas
+
+class RoomCreate(BaseModel):
+    name: str
+
+class RoomOut(RoomCreate):
+    id: uuid.UUID
+    created_at: datetime
+    lodge_id: uuid.UUID
+    model_config = {"from_attributes": True}
+
+class AgencyCreate(BaseModel):
+    name: str
+    color: Optional[str] = None
+
+class AgencyOut(AgencyCreate):
+    id: uuid.UUID
+    created_at: datetime
+    lodge_id: uuid.UUID
+    model_config = {"from_attributes": True}
 
 class GuestCreate(BaseModel):
     full_name: str

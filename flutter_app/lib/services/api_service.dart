@@ -46,6 +46,9 @@ class ApiService {
     // Add identity/lodge headers
     final headers = await _getHeaders();
     request.headers.addAll(headers);
+    if (headers.containsKey('X-Lodge-Id')) {
+      request.fields['lodge_id'] = headers['X-Lodge-Id']!;
+    }
     request.files.add(await http.MultipartFile.fromPath(
       'audio',
       audioFile.path,
@@ -138,6 +141,38 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'date_recorded': dateStr}),
     );
+  }
+
+  static Future<void> updateText(String id, String summary, String transcript) async {
+    final uri = Uri.parse('$BASE_URL/recordings/$id/text');
+    await http.patch(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'summary': summary, 'transcript': transcript}),
+    );
+  }
+
+  static Future<Map<String, dynamic>> getCalendarMonthSummary(String month) async {
+    final userEmail = await getAuthEmail();
+    final query = userEmail != null && userEmail.isNotEmpty ? '&user_email=${Uri.encodeComponent(userEmail)}' : '';
+    final uri = Uri.parse('$BASE_URL/lodge/calendar/month-summary?month=$month$query');
+    final headers = await _getHeaders();
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    throw Exception('Failed to load month summary');
+  }
+
+  static Future<List<dynamic>> getReservationsByDate(DateTime date) async {
+    final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final uri = Uri.parse('$BASE_URL/lodge/reservations?start_date=$dateStr&end_date=$dateStr');
+    final headers = await _getHeaders();
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    return [];
   }
 
   static Future<void> deleteRecording(String id) async {

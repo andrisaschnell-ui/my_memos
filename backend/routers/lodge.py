@@ -1,18 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func, desc
+from sqlalchemy import select, update, delete, func, desc, and_
 from datetime import date, datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict
 import uuid
 
 from database import get_db
-from models import Guest, Reservation, LodgeTask, Incident, DailyLog, Recording
+from models import Guest, Reservation, LodgeTask, Incident, DailyLog, Recording, Room, Agency
 from schemas import (
     GuestCreate, GuestOut,
     ReservationCreate, ReservationOut,
     LodgeTaskCreate, LodgeTaskOut,
     IncidentCreate, IncidentOut,
-    DailyLogCreate, DailyLogOut
+    DailyLogCreate, DailyLogOut,
+    RoomCreate, RoomOut,
+    AgencyCreate, AgencyOut
 )
 
 router = APIRouter(prefix="/lodge", tags=["lodge"])
@@ -713,6 +716,31 @@ async def get_immigration_report_excel(
                 cell.alignment = Alignment(horizontal='left', vertical='center')
 
     current_row = 1
+    
+    # Add Emblem Image
+    import os
+    from openpyxl.drawing.image import Image as OpenpyxlImage
+    emblem_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "emblem.png"))
+    print(f"Trying to load emblem from: {emblem_path}")
+    if os.path.exists(emblem_path):
+        try:
+            img = OpenpyxlImage(emblem_path)
+            # Scale image to appropriate size (e.g., 60x60 pixels)
+            img.height = 65
+            img.width = 65
+            # Anchor at column F, row 1 (adjust if needed to center)
+            ws.add_image(img, "F1")
+            print("Successfully added image to worksheet!")
+            
+            # Add a few blank rows to make space for the image
+            for i in range(1, 5):
+                ws.merge_cells(start_row=i, start_column=1, end_row=i, end_column=10)
+            current_row = 5
+        except Exception as e:
+            print(f"Failed to add image: {e}")
+    else:
+        print("Emblem path does NOT exist!")
+
     # Merge cells for header
     for i in range(1, 9):
         ws.merge_cells(start_row=current_row + i - 1, start_column=1, end_row=current_row + i - 1, end_column=10)
@@ -1051,3 +1079,218 @@ async def create_or_update_daily_log(
         await db.commit()
         await db.refresh(dl)
         return dl
+
+# Rooms CRUD
+
+@router.get("/rooms", response_model=List[RoomOut])
+async def get_rooms(
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    stmt = select(Room)
+    if lodge_id:
+        stmt = stmt.where(Room.lodge_id == lodge_id)
+    stmt = stmt.order_by(Room.created_at.asc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.post("/rooms", response_model=RoomOut, status_code=status.HTTP_201_CREATED)
+async def create_room(
+    data: RoomCreate,
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    if not lodge_id:
+        raise HTTPException(status_code=400, detail="Lodge ID required")
+    room = Room(name=data.name, lodge_id=lodge_id)
+    db.add(room)
+    await db.commit()
+    await db.refresh(room)
+    return room
+
+@router.put("/rooms/{room_id}", response_model=RoomOut)
+async def update_room(
+    room_id: uuid.UUID,
+    data: RoomCreate,
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    res = await db.execute(select(Room).where(Room.id == room_id, Room.lodge_id == lodge_id))
+    room = res.scalar_one_or_none()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    room.name = data.name
+    await db.commit()
+    await db.refresh(room)
+    return room
+
+@router.delete("/rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_room(
+    room_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    res = await db.execute(select(Room).where(Room.id == room_id, Room.lodge_id == lodge_id))
+    room = res.scalar_one_or_none()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    await db.delete(room)
+    await db.commit()
+    return None
+
+# Agencies CRUD
+
+@router.get("/agencies", response_model=List[AgencyOut])
+async def get_agencies(
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    stmt = select(Agency)
+    if lodge_id:
+        stmt = stmt.where(Agency.lodge_id == lodge_id)
+    stmt = stmt.order_by(Agency.created_at.asc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.post("/agencies", response_model=AgencyOut, status_code=status.HTTP_201_CREATED)
+async def create_agency(
+    data: AgencyCreate,
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    if not lodge_id:
+        raise HTTPException(status_code=400, detail="Lodge ID required")
+    agency = Agency(name=data.name, color=data.color, lodge_id=lodge_id)
+    db.add(agency)
+    await db.commit()
+    await db.refresh(agency)
+    return agency
+
+@router.put("/agencies/{agency_id}", response_model=AgencyOut)
+async def update_agency(
+    agency_id: uuid.UUID,
+    data: AgencyCreate,
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    res = await db.execute(select(Agency).where(Agency.id == agency_id, Agency.lodge_id == lodge_id))
+    agency = res.scalar_one_or_none()
+    if not agency:
+        raise HTTPException(status_code=404, detail="Agency not found")
+    agency.name = data.name
+    agency.color = data.color
+    await db.commit()
+    await db.refresh(agency)
+    return agency
+
+@router.delete("/agencies/{agency_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agency(
+    agency_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    res = await db.execute(select(Agency).where(Agency.id == agency_id, Agency.lodge_id == lodge_id))
+    agency = res.scalar_one_or_none()
+    if not agency:
+        raise HTTPException(status_code=404, detail="Agency not found")
+    await db.delete(agency)
+    await db.commit()
+    return None
+
+# Export Booking Sheet
+
+@router.get("/export-booking-sheet")
+async def export_booking_sheet(
+    month: str, # YYYY-MM
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
+):
+    from fastapi.responses import StreamingResponse
+    import io
+    import calendar as pycal
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment
+    
+    try:
+        year, mth = map(int, month.split('-'))
+        start_date = date(year, mth, 1)
+        _, days_in_month = pycal.monthrange(year, mth)
+        end_date = date(year, mth, days_in_month)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid month format")
+
+    # Fetch Rooms
+    room_stmt = select(Room)
+    if lodge_id: room_stmt = room_stmt.where(Room.lodge_id == lodge_id)
+    rooms = (await db.execute(room_stmt)).scalars().all()
+    
+    # Fetch Agencies
+    agency_stmt = select(Agency)
+    if lodge_id: agency_stmt = agency_stmt.where(Agency.lodge_id == lodge_id)
+    agencies = (await db.execute(agency_stmt)).scalars().all()
+    
+    # Fetch Reservations
+    res_stmt = select(Reservation).where(
+        and_(
+            Reservation.check_in <= end_date,
+            Reservation.check_out >= start_date,
+            Reservation.status != 'cancelled'
+        )
+    ).options(selectinload(Reservation.guest))
+    reservations = (await db.execute(res_stmt)).scalars().all()
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Bookings {month}"
+    
+    # Legend Row (Row 2)
+    ws.cell(row=2, column=1, value="Legend:")
+    col_idx = 2
+    for ag in agencies:
+        c = ws.cell(row=2, column=col_idx, value=ag.name)
+        if ag.color:
+            hex_color = ag.color.replace('#', '')
+            c.fill = PatternFill(start_color=hex_color, end_color=hex_color, fill_type="solid")
+        col_idx += 1
+        
+    # Days Row (Row 4)
+    ws.cell(row=4, column=1, value="Houses / Days").font = Font(bold=True)
+    for day in range(1, days_in_month + 1):
+        ws.cell(row=4, column=day + 1, value=day).font = Font(bold=True)
+        
+    # House Rows
+    row_idx = 5
+    for room in rooms:
+        ws.cell(row=row_idx, column=1, value=room.name)
+        # Check bookings for this room
+        for day in range(1, days_in_month + 1):
+            curr_date = date(year, mth, day)
+            # Find a reservation covering this day and room
+            match = None
+            for r in reservations:
+                # room names must match exactly or close enough. Here we use exact matching.
+                if r.room_or_unit == room.name and r.check_in <= curr_date < r.check_out:
+                    match = r
+                    break
+            
+            if match:
+                c = ws.cell(row=row_idx, column=day + 1, value=(match.guest.full_name if match.guest else 'Booked'))
+                # Match agency color
+                ag_color = None
+                for ag in agencies:
+                    if match.source and ag.name.lower() == match.source.lower() and ag.color:
+                        ag_color = ag.color.replace('#', '')
+                        break
+                if ag_color:
+                    c.fill = PatternFill(start_color=ag_color, end_color=ag_color, fill_type="solid")
+                
+        row_idx += 1
+        
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    headers = {
+        'Content-Disposition': f'attachment; filename="Booking_List_{month}.xlsx"'
+    }
+    return StreamingResponse(output, headers=headers, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

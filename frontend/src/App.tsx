@@ -13,6 +13,7 @@ import { IncidentLogView } from './pages/IncidentLogView'
 import { DailyLogView } from './pages/DailyLogView'
 import { ImmigrationView } from './pages/ImmigrationView'
 import { DocumentToolsView } from './pages/DocumentToolsView'
+import BookingSheetView from './pages/BookingSheetView'
 import { useTranslation } from './i18n/translations'
 import { api } from './api/client'
 
@@ -52,7 +53,7 @@ function Navigation({
   const isAdmin = authRole === 'admin' || authEmail === 'andrisa.schnell@gmail.com'
 
   const activeLodge = lodges.find((l) => l.id === activeLodgeId);
-  const activeLodgeName = activeLodge ? activeLodge.name : 'Landco Lodge Assistant';
+  const activeLodgeName = activeLodge ? activeLodge.name : 'Lodge Assistant';
 
   return (
     <nav className="no-print" style={{ background: '#0f172a', borderBottom: '1px solid #1e293b', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
@@ -62,6 +63,7 @@ function Navigation({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Link to="/lodge" style={navStyle('/lodge')}>🏠 {t.home}</Link>
         <Link to="/reservations" style={navStyle('/reservations')}>🗓️ {t.reservations}</Link>
+        <Link to="/booking-sheet" style={navStyle('/booking-sheet')}>📊 Sheet</Link>
         <Link to="/tasks" style={navStyle('/tasks')}>📋 {t.tasks}</Link>
         <Link to="/incidents" style={navStyle('/incidents')}>🚨 {t.incidents}</Link>
         <Link to="/daily-log" style={navStyle('/daily-log')}>📔 {t.dailyLog}</Link>
@@ -167,6 +169,7 @@ function MainRoutes({
         <Routes>
           <Route path="/lodge" element={<LodgeDashboard onNavigate={(tab) => navigate(`/${tab}`)} lang={lang} />} />
           <Route path="/reservations" element={<ReservationsView />} />
+          <Route path="/booking-sheet" element={<BookingSheetView />} />
           <Route path="/tasks" element={<TaskBoardView />} />
           <Route path="/incidents" element={<IncidentLogView />} />
           <Route path="/daily-log" element={<DailyLogView />} />

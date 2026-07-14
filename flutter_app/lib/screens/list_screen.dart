@@ -92,6 +92,39 @@ class _ListScreenState extends State<ListScreen> {
     }
   }
 
+  Future<void> _showEditDialog(Recording item) async {
+    final nameCtrl = TextEditingController(text: item.summary);
+    final transCtrl = TextEditingController(text: item.transcript);
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Memo'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Summary')),
+            const SizedBox(height: 8),
+            TextField(controller: transCtrl, decoration: const InputDecoration(labelText: 'Transcript'), maxLines: 3),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+        ],
+      )
+    );
+    
+    if (result == true) {
+      setState(() => _loading = true);
+      try {
+        await ApiService.updateText(item.id, nameCtrl.text.trim(), transCtrl.text.trim());
+      } finally {
+        _fetchRecordings();
+      }
+    }
+  }
+
   void _showDetailModal(Recording rec) {
     showModalBottomSheet(
       context: context,
@@ -121,6 +154,13 @@ class _ListScreenState extends State<ListScreen> {
                           rec.summary,
                           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
                         ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blueGrey),
+                        onPressed: () {
+                          Navigator.pop(bottomSheetCtx);
+                          _showEditDialog(rec);
+                        },
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.red),

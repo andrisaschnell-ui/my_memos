@@ -9,7 +9,7 @@ import aiofiles, os, uuid
 
 from database import get_db
 from models import Recording, Client
-from schemas import RecordingOut, StatusUpdate, DateUpdate, ClientUpdate
+from schemas import RecordingOut, StatusUpdate, DateUpdate, ClientUpdate, TextUpdate
 from services.transcription import transcribe_audio
 from services.summariser import summarise_to_three_words, categorize_shopping_item
 
@@ -340,6 +340,33 @@ async def update_client(
     await db.commit()
     await db.refresh(rec)
     return rec
+
+
+@router.patch("/{recording_id}/text", response_model=RecordingOut)
+async def update_text(
+    recording_id: str,
+    update: TextUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update summary and transcript of a recording."""
+    try:
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    result = await db.execute(
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == rec_uuid)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    rec.summary = update.summary
+    rec.transcript = update.transcript
+    await db.commit()
+    await db.refresh(rec)
+    return rec
+
 
 
 @router.delete("/{recording_id}", status_code=204)

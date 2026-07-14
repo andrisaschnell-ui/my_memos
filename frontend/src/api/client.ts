@@ -98,6 +98,28 @@ export const getActiveShopping = () =>
 export const getShoppingHistory = () =>
   api.get(`/recordings/shopping/history`).then(r => r.data)
 
+export const updateRecordingText = (id: string, summary: string, transcript: string) =>
+  api.patch(`/recordings/${id}/text`, { summary, transcript }).then(r => r.data)
+
+export const getCalendarMonthSummary = (month: string) =>
+  api.get(`/lodge/calendar/month-summary`, { params: { month } }).then(r => r.data)
+
+export const getReservationsByDate = (dateStr: string) =>
+  api.get(`/lodge/reservations`, { params: { start_date: dateStr, end_date: dateStr } }).then(r => r.data)
+
+export const getRooms = () => api.get(`/lodge/rooms`).then(r => r.data)
+export const createRoom = (name: string) => api.post(`/lodge/rooms`, { name }).then(r => r.data)
+export const updateRoom = (id: string, name: string) => api.put(`/lodge/rooms/${id}`, { name }).then(r => r.data)
+export const deleteRoom = (id: string) => api.delete(`/lodge/rooms/${id}`).then(r => r.data)
+
+export const getAgencies = () => api.get(`/lodge/agencies`).then(r => r.data)
+export const createAgency = (name: string, color: string) => api.post(`/lodge/agencies`, { name, color }).then(r => r.data)
+export const updateAgency = (id: string, name: string, color: string) => api.put(`/lodge/agencies/${id}`, { name, color }).then(r => r.data)
+export const deleteAgency = (id: string) => api.delete(`/lodge/agencies/${id}`).then(r => r.data)
+
+export const exportBookingSheet = (month: string) => 
+  api.get(`/lodge/export-booking-sheet`, { params: { month }, responseType: 'blob' }).then(r => r.data)
+
 export const getClients = () =>
   api.get(`/clients`).then(r => r.data)
 

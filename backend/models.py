@@ -65,6 +65,25 @@ class AppRelease(Base):
     release_notes = Column(Text, nullable=True)
 
 
+class Room(Base):
+    __tablename__ = "rooms"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    name       = Column(String(100), nullable=False)
+    lodge_id   = Column(UUID(as_uuid=True), ForeignKey("lodges.id", ondelete="CASCADE"), nullable=False)
+
+
+class Agency(Base):
+    __tablename__ = "agencies"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    name       = Column(String(100), nullable=False)
+    color      = Column(String(20), nullable=True) # e.g. '#FF0000'
+    lodge_id   = Column(UUID(as_uuid=True), ForeignKey("lodges.id", ondelete="CASCADE"), nullable=False)
+
+
 class Guest(Base):
     __tablename__ = "guests"
 

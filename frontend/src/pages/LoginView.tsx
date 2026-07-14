@@ -244,7 +244,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             onClick={handleEnterApp}
             style={{ width: '100%', padding: 14, background: 'linear-gradient(135deg, #10b981, #059669)', color: '#FFF', border: 'none', borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}
           >
-            Enter Landco Lodge Assistant 🚀
+            Enter Lodge Assistant 🚀
           </button>
         </div>
       </div>

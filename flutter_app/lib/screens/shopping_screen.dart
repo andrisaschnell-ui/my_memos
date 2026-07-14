@@ -47,6 +47,47 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     _fetchShopping();
   }
 
+  Future<void> _showEditDialog(Recording item, String currentName) async {
+    final nameCtrl = TextEditingController(text: currentName);
+    final transCtrl = TextEditingController(text: item.transcript);
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Summary / Name')),
+            const SizedBox(height: 8),
+            TextField(controller: transCtrl, decoration: const InputDecoration(labelText: 'Transcript'), maxLines: 3),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+        ],
+      )
+    );
+    
+    if (result == true) {
+      // Re-attach category if it was stripped
+      String newSummary = nameCtrl.text.trim();
+      if (item.summary.startsWith('[') && item.summary.contains(']')) {
+        final endIdx = item.summary.indexOf(']');
+        final prefix = item.summary.substring(0, endIdx + 1);
+        newSummary = '$prefix $newSummary';
+      }
+      
+      setState(() => _loading = true);
+      try {
+        await ApiService.updateText(item.id, newSummary, transCtrl.text.trim());
+      } finally {
+        _fetchShopping();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const categories = [
@@ -178,6 +219,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                                             final name = entry['name'] as String;
                                             return ListTile(
                                               contentPadding: EdgeInsets.zero,
+                                              onTap: () => _showEditDialog(item, name),
                                               title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
                                               subtitle: item.transcript != name
                                                   ? Text(item.transcript, style: const TextStyle(fontSize: 12))
@@ -185,6 +227,10 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
+                                                  IconButton(
+                                                    icon: const Icon(Icons.edit, color: Colors.blueGrey),
+                                                    onPressed: () => _showEditDialog(item, name),
+                                                  ),
                                                   IconButton(
                                                     icon: const Icon(Icons.check_circle_outline, color: Colors.green),
                                                     onPressed: () => _markDone(item),
