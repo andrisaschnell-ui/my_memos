@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func, desc, and_
+from sqlalchemy.orm import selectinload
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict
 import uuid
