@@ -833,13 +833,31 @@ async def get_immigration_report_excel(
     )
 
 @router.post("/reservations")
-async def create_reservation(data: ReservationCreate, db: AsyncSession = Depends(get_db)):
+async def create_reservation(
+    data: ReservationCreate, 
+    db: AsyncSession = Depends(get_db),
+    lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
+    user_email: Optional[str] = Depends(get_current_user_email)
+):
     # Auto calculate total_usd if 0
     total = data.total_usd
     if total == 0 and data.rate_per_night_usd > 0 and data.check_out > data.check_in:
         nights = (data.check_out - data.check_in).days
         total = float(data.rate_per_night_usd) * nights
     
+    # If no guest is provided (e.g. painted from Booking Sheet), create a dummy guest
+    # so that the reservation is linked to the current lodge and user.
+    if not data.guest_id:
+        from models import Guest
+        dummy = Guest(
+            full_name=f"{data.source or 'Agency'} Booking",
+            lodge_id=lodge_id,
+            user_email=user_email
+        )
+        db.add(dummy)
+        await db.flush()
+        data.guest_id = dummy.id
+
     dump = data.model_dump()
     dump["total_usd"] = total
     r = Reservation(**dump)
