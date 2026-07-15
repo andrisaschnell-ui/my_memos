@@ -15,6 +15,7 @@ export default function BookingSheetView() {
   const [loading, setLoading] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [activeAgencyName, setActiveAgencyName] = useState<string | null>(null)
+  const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({})
 
   // Modals for add/edit
   const [roomName, setRoomName] = useState('')
@@ -92,56 +93,72 @@ export default function BookingSheetView() {
   const daysInMonth = getDaysInMonth(new Date(`${selectedMonth}-01`))
   const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
-  const handleCellClick = async (roomName: string, currDate: string, existingMatch: any) => {
-    if (!editMode) return
+  const handleCellClick = (roomName: string, currDate: string) => {
+    if (!editMode || !activeAgencyName) return
     
+    const cellKey = `${roomName}|${currDate}`
+    setPendingChanges(prev => ({
+      ...prev,
+      [cellKey]: activeAgencyName
+    }))
+  }
+
+  const handleSaveChanges = async () => {
+    if (Object.keys(pendingChanges).length === 0) return
+    
+    setLoading(true)
     const { api } = await import('../api/client')
-    if (activeAgencyName === 'ERASER') {
-      if (existingMatch) {
-        setLoading(true)
-        try {
-          await api.delete(`/lodge/reservations/${existingMatch.id}`)
-          await fetchMonthReservations()
-        } catch (e) {
-          console.error(e)
-          setLoading(false)
-        }
-      }
-    } else if (activeAgencyName) {
-      setLoading(true)
-      try {
-        if (existingMatch) {
-          // Update existing reservation source
-          const payload = { ...existingMatch }
-          payload.source = activeAgencyName
-          payload.guest_id = payload.guest_id || null
-          // Omit guest if it's nested dict to avoid schema errors on backend
-          delete payload.guest
-          await api.put(`/lodge/reservations/${existingMatch.id}`, payload)
+    
+    try {
+      // Process all pending changes
+      for (const [cellKey, agencyName] of Object.entries(pendingChanges)) {
+        const [roomName, currDate] = cellKey.split('|')
+        
+        const existingMatch = reservations.find(r => 
+          r.room_or_unit === roomName && 
+          r.check_in <= currDate && 
+          r.check_out > currDate &&
+          r.status !== 'cancelled'
+        )
+
+        if (agencyName === 'ERASER') {
+          if (existingMatch) {
+            await api.delete(`/lodge/reservations/${existingMatch.id}`)
+          }
         } else {
-          // Create new 1-day reservation
-          const nextDay = new Date(currDate)
-          nextDay.setDate(nextDay.getDate() + 1)
-          const checkoutDate = nextDay.toISOString().split('T')[0]
-          
-          await api.post('/lodge/reservations', {
-            room_or_unit: roomName,
-            check_in: currDate,
-            check_out: checkoutDate,
-            source: activeAgencyName,
-            status: 'confirmed',
-            num_adults: 1,
-            num_children: 0,
-            rate_per_night_usd: 0,
-            total_usd: 0,
-            deposit_paid: false
-          })
+          if (existingMatch) {
+            const payload = { ...existingMatch }
+            payload.source = agencyName
+            payload.guest_id = payload.guest_id || null
+            delete payload.guest
+            await api.put(`/lodge/reservations/${existingMatch.id}`, payload)
+          } else {
+            const nextDay = new Date(currDate)
+            nextDay.setDate(nextDay.getDate() + 1)
+            const checkoutDate = nextDay.toISOString().split('T')[0]
+            
+            await api.post('/lodge/reservations', {
+              room_or_unit: roomName,
+              check_in: currDate,
+              check_out: checkoutDate,
+              source: agencyName,
+              status: 'confirmed',
+              num_adults: 1,
+              num_children: 0,
+              rate_per_night_usd: 0,
+              total_usd: 0,
+              deposit_paid: false
+            })
+          }
         }
-        await fetchMonthReservations()
-      } catch (e) {
-        console.error(e)
-        setLoading(false)
       }
+      
+      setPendingChanges({})
+      await fetchMonthReservations()
+    } catch (e) {
+      console.error(e)
+      alert("Error saving some changes. Please refresh and try again.")
+      setLoading(false)
     }
   }
 
@@ -150,10 +167,31 @@ export default function BookingSheetView() {
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h2>📅 Booking Sheet (Excel Layout)</h2>
         <div style={{ display: 'flex', gap: 10 }}>
+          {editMode && Object.keys(pendingChanges).length > 0 && (
+            <button 
+              onClick={handleSaveChanges}
+              style={{ 
+                padding: '8px 16px', 
+                background: '#10B981', 
+                color: '#FFF', 
+                border: 'none', 
+                borderRadius: 6, 
+                cursor: 'pointer', 
+                fontWeight: 'bold',
+                boxShadow: '0 0 10px rgba(16, 185, 129, 0.5)'
+              }}
+            >
+              💾 Save Changes ({Object.keys(pendingChanges).length})
+            </button>
+          )}
           <button 
             onClick={() => {
+              if (Object.keys(pendingChanges).length > 0) {
+                if (!window.confirm("You have unsaved changes. Discard them?")) return
+              }
               setEditMode(!editMode)
               setActiveAgencyName(null)
+              setPendingChanges({})
             }}
             style={{ 
               padding: '8px 16px', 
@@ -250,70 +288,84 @@ export default function BookingSheetView() {
         </div>
       </div>
 
-      {loading ? (
-        <p>Loading sheet...</p>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
-            <thead>
-              <tr style={{ background: '#F1F5F9' }}>
-                <th style={{ padding: '8px', border: '1px solid #CBD5E1', textAlign: 'left', minWidth: 120 }}>Houses / Days</th>
-                {daysArray.map(d => (
-                  <th key={d} style={{ padding: '8px', border: '1px solid #CBD5E1', minWidth: 30 }}>{d}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rooms.map(room => (
-                <tr key={room.id}>
-                  <td style={{ padding: '8px', border: '1px solid #CBD5E1', textAlign: 'left', fontWeight: 'bold', background: '#F8FAFC' }}>
-                    {room.name}
-                  </td>
-                  {daysArray.map(day => {
-                    const currDate = `${selectedMonth}-${String(day).padStart(2, '0')}`
-                    const match = reservations.find(r => 
-                      r.room_or_unit === room.name && 
-                      r.check_in <= currDate && 
-                      r.check_out > currDate &&
-                      r.status !== 'cancelled'
-                    )
-                    let bgColor = 'transparent'
-                    if (match) {
-                      const agency = agencies.find(a => a.name.toLowerCase() === (match.source || '').toLowerCase())
-                      if (agency && agency.color) bgColor = agency.color
-                      else bgColor = '#CBD5E1' // default matched
-                    }
-                    return (
-                      <td 
-                        key={day} 
-                        onClick={() => handleCellClick(room.name, currDate, match)}
-                        style={{ 
-                          border: '1px solid #CBD5E1', 
-                          background: bgColor, 
-                          height: 30, 
-                          padding: 2,
-                          cursor: editMode && activeAgencyName ? 'pointer' : 'default'
-                        }}
-                      >
-                        {match && (
-                          <div style={{ fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 60, margin: '0 auto', color: '#000', fontWeight: 'bold' }} title={match.guest?.full_name}>
-                            {match.guest?.full_name || 'Booked'}
-                          </div>
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
+      {loading && <p style={{ color: '#3B82F6', fontWeight: 'bold' }}>Loading / Saving...</p>}
+      
+      <div style={{ overflowX: 'auto', opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
+          <thead>
+            <tr style={{ background: '#F1F5F9' }}>
+              <th style={{ padding: '8px', border: '1px solid #CBD5E1', textAlign: 'left', minWidth: 120 }}>Houses / Days</th>
+              {daysArray.map(d => (
+                <th key={d} style={{ padding: '8px', border: '1px solid #CBD5E1', minWidth: 30 }}>{d}</th>
               ))}
-              {rooms.length === 0 && (
-                <tr>
-                  <td colSpan={daysInMonth + 1} style={{ padding: 20, color: '#94A3B8' }}>No houses configured. Add houses above to see the grid.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </tr>
+          </thead>
+          <tbody>
+            {rooms.map(room => (
+              <tr key={room.id}>
+                <td style={{ padding: '8px', border: '1px solid #CBD5E1', textAlign: 'left', fontWeight: 'bold', background: '#F8FAFC' }}>
+                  {room.name}
+                </td>
+                {daysArray.map(day => {
+                  const currDate = `${selectedMonth}-${String(day).padStart(2, '0')}`
+                  const cellKey = `${room.name}|${currDate}`
+                  
+                  const match = reservations.find(r => 
+                    r.room_or_unit === room.name && 
+                    r.check_in <= currDate && 
+                    r.check_out > currDate &&
+                    r.status !== 'cancelled'
+                  )
+                  
+                  // Check pending changes first
+                  let activeSource = null
+                  let isPending = false
+                  
+                  if (pendingChanges[cellKey]) {
+                    isPending = true
+                    activeSource = pendingChanges[cellKey] === 'ERASER' ? null : pendingChanges[cellKey]
+                  } else if (match) {
+                    activeSource = match.source
+                  }
+                  
+                  let bgColor = 'transparent'
+                  if (activeSource) {
+                    const agency = agencies.find(a => a.name.toLowerCase() === (activeSource || '').toLowerCase())
+                    if (agency && agency.color) bgColor = agency.color
+                    else bgColor = '#CBD5E1'
+                  }
+                  
+                  return (
+                    <td 
+                      key={day} 
+                      onClick={() => handleCellClick(room.name, currDate)}
+                      style={{ 
+                        border: '1px solid #CBD5E1', 
+                        background: bgColor, 
+                        height: 30, 
+                        padding: 2,
+                        cursor: editMode && activeAgencyName ? 'pointer' : 'default',
+                        opacity: isPending ? 0.7 : 1
+                      }}
+                    >
+                      {activeSource && (
+                        <div style={{ fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 60, margin: '0 auto', color: '#000', fontWeight: 'bold' }} title={activeSource}>
+                          {activeSource}
+                        </div>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+            {rooms.length === 0 && (
+              <tr>
+                <td colSpan={daysInMonth + 1} style={{ padding: 20, color: '#94A3B8' }}>No houses configured. Add houses above to see the grid.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
