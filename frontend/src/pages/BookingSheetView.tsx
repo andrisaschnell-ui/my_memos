@@ -116,24 +116,23 @@ export default function BookingSheetView() {
       for (const [cellKey, agencyName] of Object.entries(pendingChanges)) {
         const [roomName, currDate] = cellKey.split('|')
         
-        const existingMatch = reservations.find(r => 
+        const agencyMatch = reservations.find(r => 
           r.room_or_unit === roomName && 
           r.check_in <= currDate && 
           r.check_out > currDate &&
-          r.status !== 'cancelled'
+          r.status !== 'cancelled' &&
+          !r.guest_id // Only interact with Agency allocation blocks
         )
 
         if (agencyName === 'ERASER') {
-          if (existingMatch) {
-            await api.delete(`/lodge/reservations/${existingMatch.id}`)
+          if (agencyMatch) {
+            await api.delete(`/lodge/reservations/${agencyMatch.id}`)
           }
         } else {
-          if (existingMatch) {
-            const payload = { ...existingMatch }
+          if (agencyMatch) {
+            const payload = { ...agencyMatch }
             payload.source = agencyName
-            payload.guest_id = payload.guest_id || null
-            delete payload.guest
-            await api.put(`/lodge/reservations/${existingMatch.id}`, payload)
+            await api.put(`/lodge/reservations/${agencyMatch.id}`, payload)
           } else {
             const nextDay = new Date(currDate)
             nextDay.setDate(nextDay.getDate() + 1)
@@ -145,7 +144,7 @@ export default function BookingSheetView() {
               check_out: checkoutDate,
               source: agencyName,
               status: 'confirmed',
-              num_adults: 1,
+              num_adults: 0,
               num_children: 0,
               rate_per_night_usd: 0,
               total_usd: 0,
@@ -339,7 +338,7 @@ export default function BookingSheetView() {
                   const currDate = `${selectedMonth}-${String(day).padStart(2, '0')}`
                   const cellKey = `${room.name}|${currDate}`
                   
-                  const match = reservations.find(r => 
+                  const matches = reservations.filter(r => 
                     r.room_or_unit === room.name && 
                     r.check_in <= currDate && 
                     r.check_out > currDate &&
@@ -349,12 +348,36 @@ export default function BookingSheetView() {
                   // Check pending changes first
                   let activeSource = null
                   let isPending = false
+                  let totalPersons = 0
                   
                   if (pendingChanges[cellKey]) {
                     isPending = true
                     activeSource = pendingChanges[cellKey] === 'ERASER' ? null : pendingChanges[cellKey]
-                  } else if (match) {
-                    activeSource = match.source
+                  }
+                  
+                  matches.forEach(m => {
+                    // Count persons from actual guest bookings
+                    if (m.guest_id || m.num_adults > 0 || m.num_children > 0) {
+                      totalPersons += (Number(m.num_adults) || 0) + (Number(m.num_children) || 0)
+                    }
+                    
+                    // Look for agency paint
+                    if (!isPending && m.source) {
+                      const isAgency = agencies.some(a => a.name.toLowerCase() === (m.source || '').toLowerCase())
+                      if (isAgency && !m.guest_id) { 
+                        activeSource = m.source
+                      }
+                    }
+                  })
+                  
+                  // Fallback: if no pure agency block, check if guest booking had agency source
+                  if (!isPending && !activeSource) {
+                     matches.forEach(m => {
+                       if (m.source) {
+                         const isAgency = agencies.some(a => a.name.toLowerCase() === (m.source || '').toLowerCase())
+                         if (isAgency) activeSource = m.source
+                       }
+                     })
                   }
                   
                   let bgColor = 'transparent'
@@ -377,9 +400,9 @@ export default function BookingSheetView() {
                         opacity: isPending ? 0.7 : 1
                       }}
                     >
-                      {activeSource && (
-                        <div style={{ fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 60, margin: '0 auto', color: '#000', fontWeight: 'bold' }} title={activeSource}>
-                          {activeSource}
+                      {totalPersons > 0 && (
+                        <div style={{ fontSize: 13, fontWeight: 'bold', color: '#000', textAlign: 'center' }}>
+                          {totalPersons}
                         </div>
                       )}
                     </td>
