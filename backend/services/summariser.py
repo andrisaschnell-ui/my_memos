@@ -1,13 +1,10 @@
 """
-Uses NVIDIA NIM (or local Ollama fallback) to summarise memos and categorize/translate shopping items.
+Uses NVIDIA NIM to summarise memos and categorize/translate shopping items.
 """
 import os
 import re
 import json
 import httpx
-
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
 
 NVIDIA_API_KEY = os.getenv("NVIDIA-KEY") or os.getenv("NVIDIA_API_KEY")
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -18,7 +15,6 @@ CATEGORIES = [
 ]
 
 async def summarise_to_three_words(transcript: str) -> str:
-    # Try NVIDIA NIM first if key is available
     if NVIDIA_API_KEY:
         try:
             payload = {
@@ -49,28 +45,7 @@ async def summarise_to_three_words(transcript: str) -> str:
         except Exception as e:
             print(f"NVIDIA summarisation error: {e}")
 
-    # Fallback to Ollama
-    url = f"{OLLAMA_HOST}/api/generate"
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": f"Summarise into EXACTLY 3 words in English without punctuation:\n\nTranscript: {transcript}\n\n3-word summary:",
-        "stream": False,
-        "options": {"temperature": 0.2, "max_tokens": 20}
-    }
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            res = await client.post(url, json=payload)
-            if res.status_code == 200:
-                raw = res.json().get("response", "").strip()
-                words = re.findall(r'\b[A-Za-z0-9]+\b', raw)
-                if len(words) >= 3:
-                    return " ".join(words[:3]).title()
-                elif len(words) > 0:
-                    return " ".join(words).title()
-    except Exception as e:
-        print(f"Ollama summarisation error: {e}")
-
-    # Fallback: extract first 3 words directly from transcript
+    # Fallback: extract first 3 words directly from transcript if NIM fails/no key
     words = re.findall(r'\b[A-Za-z0-9]+\b', transcript)
     if len(words) >= 3:
         return " ".join(words[:3]).title()
