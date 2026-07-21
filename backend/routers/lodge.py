@@ -163,6 +163,7 @@ async def get_dashboard_summary(
 # -----------------------------------------------------------------------------
 @router.get("/guests", response_model=List[GuestOut])
 async def list_guests(
+    limit: int = 1000,
     db: AsyncSession = Depends(get_db),
     lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
     user_email: Optional[str] = Depends(get_current_user_email)
@@ -172,7 +173,7 @@ async def list_guests(
         stmt = stmt.where(Guest.user_email == user_email)
     if lodge_id:
         stmt = stmt.where(Guest.lodge_id == lodge_id)
-    res = await db.execute(stmt.order_by(Guest.full_name.asc()))
+    res = await db.execute(stmt.order_by(Guest.full_name.asc()).limit(limit))
     guests = res.scalars().all()
     for g in guests:
         g.has_passport_image = bool(g.passport_image)
@@ -312,11 +313,14 @@ async def delete_guest(
 async def list_reservations(
     upcoming: Optional[int] = None,
     status_filter: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    limit: int = 1000,
     db: AsyncSession = Depends(get_db),
     lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id),
     user_email: Optional[str] = Depends(get_current_user_email)
 ):
-    query = select(Reservation).join(Guest)
+    query = select(Reservation).join(Guest).options(selectinload(Reservation.guest))
     if user_email:
         query = query.where(Guest.user_email == user_email)
     if lodge_id:
@@ -325,10 +329,25 @@ async def list_reservations(
     query = query.order_by(Reservation.check_in.asc())
     if upcoming:
         today = date.today()
-        end_date = today + timedelta(days=upcoming)
-        query = query.where(Reservation.check_in >= today, Reservation.check_in <= end_date)
+        end_d = today + timedelta(days=upcoming)
+        query = query.where(Reservation.check_in >= today, Reservation.check_in <= end_d)
+    
+    if start_date and end_date:
+        query = query.where(
+            and_(
+                Reservation.check_in <= end_date,
+                Reservation.check_out >= start_date
+            )
+        )
+    elif start_date:
+        query = query.where(Reservation.check_in >= start_date)
+    elif end_date:
+        query = query.where(Reservation.check_in <= end_date)
+
     if status_filter:
         query = query.where(Reservation.status == status_filter)
+        
+    query = query.limit(limit)
     
     res = await db.execute(query)
     reservations = res.scalars().all()
@@ -336,16 +355,13 @@ async def list_reservations(
     out = []
     for r in reservations:
         g_data = None
-        if r.guest_id:
-            gres = await db.execute(select(Guest).where(Guest.id == r.guest_id))
-            gobj = gres.scalar_one_or_none()
-            if gobj:
-                g_data = {
-                    "id": str(gobj.id),
-                    "full_name": gobj.full_name,
-                    "phone": gobj.phone,
-                    "email": gobj.email
-                }
+        if r.guest:
+            g_data = {
+                "id": str(r.guest.id),
+                "full_name": r.guest.full_name,
+                "phone": r.guest.phone,
+                "email": r.guest.email
+            }
         out.append({
             "id": str(r.id),
             "guest_id": str(r.guest_id) if r.guest_id else None,
