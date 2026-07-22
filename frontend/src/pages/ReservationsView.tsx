@@ -76,7 +76,8 @@ export const ReservationsView: React.FC = () => {
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [rotation, setRotation] = useState<number>(0);
   const [ocrLoading, setOcrLoading] = useState<boolean>(false);
-  const [searchDate, setSearchDate] = useState<string>('');
+  const [searchDateFrom, setSearchDateFrom] = useState<string>('');
+  const [searchDateTo, setSearchDateTo] = useState<string>('');
 
   // Form State - Reservation
   const [resForm, setResForm] = useState({
@@ -136,10 +137,10 @@ export const ReservationsView: React.FC = () => {
     loadData();
   }, []);
 
-  const fetchSearchResults = async (dateStr: string) => {
+  const fetchSearchResults = async (from: string, to: string) => {
     setLoading(true);
     try {
-      const resp = await api.get('/passport/search', { params: { date: dateStr } });
+      const resp = await api.get('/passport/search', { params: { date_from: from, date_to: to } });
       setGuests(resp.data);
     } catch (err) {
       console.error('Error searching passports:', err);
@@ -584,26 +585,39 @@ export const ReservationsView: React.FC = () => {
           </div>
 
           {/* Search Filter by Date */}
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem', background: '#1e293b', padding: '1rem', borderRadius: '12px' }}>
-            <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>🔍 Search Passports by Date:</label>
-            <input
-              type="date"
-              value={searchDate}
-              onChange={(e) => {
-                const d = e.target.value;
-                setSearchDate(d);
-                if (d) {
-                  fetchSearchResults(d);
-                } else {
-                  loadData();
-                }
-              }}
-              style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#fff' }}
-            />
-            {searchDate && (
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem', background: '#1e293b', padding: '1rem', borderRadius: '12px', flexWrap: 'wrap' }}>
+            <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>🔍 Search Passports by Period:</label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <label style={{ color: '#94a3b8', fontSize: '0.8rem' }}>From:</label>
+              <input
+                type="date"
+                value={searchDateFrom}
+                onChange={(e) => {
+                  const d = e.target.value;
+                  setSearchDateFrom(d);
+                  if (d && searchDateTo) fetchSearchResults(d, searchDateTo);
+                  else if (!d && !searchDateTo) loadData();
+                }}
+                style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#fff' }}
+              />
+              <label style={{ color: '#94a3b8', fontSize: '0.8rem' }}>To:</label>
+              <input
+                type="date"
+                value={searchDateTo}
+                onChange={(e) => {
+                  const d = e.target.value;
+                  setSearchDateTo(d);
+                  if (searchDateFrom && d) fetchSearchResults(searchDateFrom, d);
+                  else if (!searchDateFrom && !d) loadData();
+                }}
+                style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#fff' }}
+              />
+            </div>
+            {(searchDateFrom || searchDateTo) && (
               <button
                 onClick={() => {
-                  setSearchDate('');
+                  setSearchDateFrom('');
+                  setSearchDateTo('');
                   loadData();
                 }}
                 style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}

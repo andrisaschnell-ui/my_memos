@@ -77,7 +77,8 @@ class _GuestScreenState extends State<GuestScreen> {
   List<GuestModel> _guests = [];
   bool _loading = true;
   String? _token;
-  DateTime? _selectedFilterDate;
+  DateTime? _selectedFilterDateFrom;
+  DateTime? _selectedFilterDateTo;
 
   @override
   void initState() {
@@ -108,10 +109,11 @@ class _GuestScreenState extends State<GuestScreen> {
         headers['X-User-Email'] = userEmail;
       }
 
-      if (_selectedFilterDate != null) {
-        final dateStr = '${_selectedFilterDate!.year}-${_selectedFilterDate!.month.toString().padLeft(2, '0')}-${_selectedFilterDate!.day.toString().padLeft(2, '0')}';
+      if (_selectedFilterDateFrom != null && _selectedFilterDateTo != null) {
+        final dateFromStr = '${_selectedFilterDateFrom!.year}-${_selectedFilterDateFrom!.month.toString().padLeft(2, '0')}-${_selectedFilterDateFrom!.day.toString().padLeft(2, '0')}';
+        final dateToStr = '${_selectedFilterDateTo!.year}-${_selectedFilterDateTo!.month.toString().padLeft(2, '0')}-${_selectedFilterDateTo!.day.toString().padLeft(2, '0')}';
         final resp = await http.get(
-          Uri.parse('$BASE_URL/passport/search?date=$dateStr'),
+          Uri.parse('$BASE_URL/passport/search?date_from=$dateFromStr&date_to=$dateToStr'),
           headers: headers,
         );
         if (resp.statusCode == 200) {
@@ -136,7 +138,10 @@ class _GuestScreenState extends State<GuestScreen> {
   }
 
   void _clearFilterDate() {
-    setState(() => _selectedFilterDate = null);
+    setState(() {
+      _selectedFilterDateFrom = null;
+      _selectedFilterDateTo = null;
+    });
     _loadGuests();
   }
 
@@ -158,9 +163,11 @@ class _GuestScreenState extends State<GuestScreen> {
   }
 
   Future<void> _selectFilterDate() async {
-    final picked = await showDatePicker(
+    final picked = await showDateRangePicker(
       context: context,
-      initialDate: _selectedFilterDate ?? DateTime.now(),
+      initialDateRange: (_selectedFilterDateFrom != null && _selectedFilterDateTo != null)
+          ? DateTimeRange(start: _selectedFilterDateFrom!, end: _selectedFilterDateTo!)
+          : null,
       firstDate: DateTime(2025),
       lastDate: DateTime(2035),
       builder: (context, child) => Theme(
@@ -178,7 +185,10 @@ class _GuestScreenState extends State<GuestScreen> {
     );
 
     if (picked != null) {
-      setState(() => _selectedFilterDate = picked);
+      setState(() {
+        _selectedFilterDateFrom = picked.start;
+        _selectedFilterDateTo = picked.end;
+      });
       _loadGuests();
     }
   }
@@ -192,7 +202,7 @@ class _GuestScreenState extends State<GuestScreen> {
         backgroundColor: const Color(0xFF1E3A8A),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          if (_selectedFilterDate != null)
+          if (_selectedFilterDateFrom != null)
             IconButton(
               icon: const Icon(Icons.clear, color: Colors.redAccent),
               onPressed: _clearFilterDate,
@@ -211,7 +221,7 @@ class _GuestScreenState extends State<GuestScreen> {
       ),
       body: Column(
         children: [
-          if (_selectedFilterDate != null)
+          if (_selectedFilterDateFrom != null && _selectedFilterDateTo != null)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -220,7 +230,7 @@ class _GuestScreenState extends State<GuestScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Filtering reservations active on: ${_selectedFilterDate!.year}-${_selectedFilterDate!.month.toString().padLeft(2, '0')}-${_selectedFilterDate!.day.toString().padLeft(2, '0')}',
+                    'Period: ${_selectedFilterDateFrom!.year}-${_selectedFilterDateFrom!.month.toString().padLeft(2, '0')}-${_selectedFilterDateFrom!.day.toString().padLeft(2, '0')} to ${_selectedFilterDateTo!.year}-${_selectedFilterDateTo!.month.toString().padLeft(2, '0')}-${_selectedFilterDateTo!.day.toString().padLeft(2, '0')}',
                     style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                   GestureDetector(

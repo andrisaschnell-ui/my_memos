@@ -203,29 +203,40 @@ async def get_passport_image(
 
 @router.get("/search")
 async def search_passports_by_date(
-    date: str,
+    date: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     user_email: Optional[str] = Depends(get_current_user_email),
     lodge_id: Optional[uuid.UUID] = Depends(get_active_lodge_id)
 ):
     """
-    Search for guests who have a reservation overlapping the specified date (YYYY-MM-DD).
+    Search for guests who have a reservation overlapping the specified date or period.
     Scoped to the requesting user and lodge.
     """
     from datetime import datetime, date as date_type
     from models import Reservation
-    try:
-        parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
-
+    
     stmt = (
         select(Guest)
         .join(Reservation, Guest.id == Reservation.guest_id)
-        .where(Reservation.check_in <= parsed_date)
-        .where(Reservation.check_out >= parsed_date)
         .distinct()
     )
+
+    try:
+        if date:
+            parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+            stmt = stmt.where(Reservation.check_in <= parsed_date).where(Reservation.check_out >= parsed_date)
+        elif date_from and date_to:
+            parsed_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            parsed_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+            stmt = stmt.where(Reservation.check_in <= parsed_to).where(Reservation.check_out >= parsed_from)
+        else:
+            # If no dates are passed, just return nothing or all? We'll let it return all
+            pass
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
     if user_email:
         stmt = stmt.where(Guest.user_email == user_email)
     if lodge_id:
