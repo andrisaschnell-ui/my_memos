@@ -346,7 +346,7 @@ export default function BookingSheetView() {
                   )
                   
                   // Check pending changes first
-                  let activeSource = null
+                  let activeSource: string | null = null
                   let isPending = false
                   let totalPersons = 0
                   
