@@ -40,6 +40,9 @@ class TextUpdate(BaseModel):
     summary: str
     transcript: str
 
+class TranscriptPayload(BaseModel):
+    transcript: str
+
 
 # Lodge Schemas
 

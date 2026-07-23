@@ -101,6 +101,12 @@ export const getShoppingHistory = () =>
 export const updateRecordingText = (id: string, summary: string, transcript: string) =>
   api.patch(`/recordings/${id}/text`, { summary, transcript }).then(r => r.data)
 
+export const resummarizeRecording = (id: string, transcript: string) =>
+  api.post(`/recordings/${id}/resummarize`, { transcript }).then(r => r.data)
+
+export const cleanRecordingTranscript = (id: string, transcript: string) =>
+  api.post(`/recordings/${id}/clean-transcript`, { transcript }).then(r => r.data)
+
 export const getCalendarMonthSummary = (month: string) =>
   api.get(`/lodge/calendar/month-summary`, { params: { month } }).then(r => r.data)
 

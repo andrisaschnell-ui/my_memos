@@ -9,9 +9,9 @@ import aiofiles, os, uuid
 
 from database import get_db
 from models import Recording, Client
-from schemas import RecordingOut, StatusUpdate, DateUpdate, ClientUpdate, TextUpdate
+from schemas import RecordingOut, StatusUpdate, DateUpdate, ClientUpdate, TextUpdate, TranscriptPayload
 from services.transcription import transcribe_audio
-from services.summariser import summarise_to_three_words, categorize_shopping_item
+from services.summariser import summarise_to_three_words, categorize_shopping_item, clean_transcript
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 UPLOAD_DIR = "/app/uploads"
@@ -360,6 +360,70 @@ async def update_text(
     
     rec.summary = update.summary
     rec.transcript = update.transcript
+    await db.commit()
+    await db.refresh(rec)
+    return rec
+
+
+@router.post("/{recording_id}/resummarize", response_model=RecordingOut)
+async def resummarize_recording(
+    recording_id: str,
+    payload: TranscriptPayload,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate a new summary based on the provided transcript and update the recording."""
+    try:
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    result = await db.execute(
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == rec_uuid)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    try:
+        if rec.type == "shopping":
+            cat_res = await categorize_shopping_item(payload.transcript)
+            new_summary = f"[{cat_res['category']}] {cat_res['item_name']}"
+        else:
+            new_summary = await summarise_to_three_words(payload.transcript)
+    except Exception as e:
+        import re
+        words = re.findall(r'\b[A-Za-z0-9]+\b', payload.transcript)
+        new_summary = " ".join(words[:3]).title() if words else "New Voice Memo"
+
+    rec.transcript = payload.transcript
+    rec.summary = new_summary
+    await db.commit()
+    await db.refresh(rec)
+    return rec
+
+
+@router.post("/{recording_id}/clean-transcript", response_model=RecordingOut)
+async def clean_recording_transcript(
+    recording_id: str,
+    payload: TranscriptPayload,
+    db: AsyncSession = Depends(get_db)
+):
+    """Use LLM to clean up the transcript spelling/grammar and return the updated recording."""
+    try:
+        rec_uuid = uuid.UUID(recording_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    result = await db.execute(
+        select(Recording).options(selectinload(Recording.client)).where(Recording.id == rec_uuid)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    cleaned = await clean_transcript(payload.transcript)
+    
+    rec.transcript = cleaned
     await db.commit()
     await db.refresh(rec)
     return rec

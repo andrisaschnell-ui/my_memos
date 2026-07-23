@@ -101,3 +101,40 @@ async def categorize_shopping_item(transcript: str) -> dict:
     words = re.findall(r'\b[A-Za-z0-9]+\b', transcript)
     summary = " ".join(words[:6]).title() if words else "Shopping Item"
     return {"item_name": summary, "category": "Groceries"}
+
+async def clean_transcript(transcript: str) -> str:
+    """
+    Uses LLM to clean up spelling, grammar, and gibberish words in the transcript, 
+    preserving the original meaning and structure.
+    """
+    if NVIDIA_API_KEY:
+        prompt = (
+            "You are a helpful assistant. Please fix the spelling, grammar, and any gibberish words "
+            "in the following voice transcript. Keep the original language and meaning exactly the same, "
+            "only fixing errors. Do not add any conversational text or explanations. Return ONLY the cleaned transcript."
+        )
+        payload = {
+            "model": "meta/llama-3.1-8b-instruct",
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": transcript}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 500
+        }
+        headers = {
+            "Authorization": f"Bearer {NVIDIA_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                res = await client.post(NVIDIA_URL, json=payload, headers=headers)
+                if res.status_code == 200:
+                    raw = res.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    return raw
+        except Exception as e:
+            print(f"NVIDIA clean transcript error: {e}")
+            
+    # Fallback: return as-is
+    return transcript
+
